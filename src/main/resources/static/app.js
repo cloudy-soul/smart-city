@@ -1,3 +1,4 @@
+import {liveCategories,loadViewportPlaces} from "./live-places.js";
 import {cities} from "./assets/cities.js";
 import {regions} from "./assets/borders.js";
 import {paint} from "./artwork.js";
@@ -22,6 +23,8 @@ if (!state.catalogVersion) {
 let view;
 let map;
 let markers;
+let disposeViewport;
+let refreshViewport;
 let formHandler;
 let pending;
 let travelTimer;
@@ -98,6 +101,7 @@ function renderChrome(){
 }
 
 function render(focus=false){
+  disposeViewport?.();
   map?.remove();
   map=undefined;
   markers=undefined;
@@ -227,7 +231,10 @@ function resultItems(records){
     link("Details",recordUrl(record),"action")+'</article>').join("");
 }
 function filterFields(records,kind){
-  const options=(key)=>["All",...new Set(records.map(record=>record[key]).filter(Boolean))];
+  const options=(key)=>["All",...new Set([
+    ...records.map(record=>record[key]).filter(Boolean),
+    ...(key==="category"?liveCategories(kind==="search"?null:kind):[])
+  ])];
   return '<div class="filters">'+field(input("query","Search","search"),view.params.get("q")||"")+
     field(input("category","Category","select",options("category")),"All")+
     field(input("area","Area","select",options("area")),"All")+
@@ -251,17 +258,29 @@ function renderCatalog(){
     '<div class="tabs">'+press("List","show-list",'id="list-toggle" aria-pressed="true"')+
     press("Map","show-map",'id="map-toggle" aria-pressed="false"')+'</div>'+
     '<p id="result-count" class="results-count" role="status"></p><div id="catalog-list"></div>'+
-    '<div id="catalog-map" hidden class="map-shell"><div id="leaf-map" class="leaf-map"></div></div>');
+    '<div id="catalog-map" hidden><div class="layout"><div class="map-shell"><div id="leaf-map" class="leaf-map"></div></div>'+viewportPanel()+'</div></div>');
   const filters=$("filters");
-  const update=()=>{
-    const {query,category,area,date,employment,module}=Object.fromEntries(new FormData(filters));
-    const results=records.filter(record=>
-      searchMatch(query,record)&&(category==="All"||record.category===category)&&(area==="All"||record.area===area)&&
+  const filterRecord=(record,filters)=>{
+    const {query,category,area,date,employment,module}=filters;
+    return searchMatch(query,record)&&(category==="All"||record.category===category)&&(area==="All"||record.area===area)&&
       (!date||record.date===date)&&(!employment||employment==="All"||record.employment===employment)&&
-      (!module||module==="All"||record.module===module||(module==="business"&&record.module==="news")));
+      (!module||module==="All"||record.module===module||(module==="business"&&record.module==="news"));
+  };
+  const currentFilters=()=>Object.fromEntries(new FormData(filters));
+  const resultsForFilters=()=>{
+    const values=currentFilters();
+    return records.filter(record=>filterRecord(record,values));
+  };
+  const liveMatches=record=>(key==="search"||record.module===key)&&filterRecord(record,currentFilters());
+  const update=()=>{
+    const results=resultsForFilters();
     $("catalog-list").innerHTML=resultItems(results);
     $("result-count").textContent=results.length+" "+t("Results").toLowerCase();
-    if(!$("catalog-map").hidden) mapRows(results);
+    if(!$("catalog-map").hidden) {
+      mapRows(results);
+      attachViewport(()=>resultsForFilters(),liveMatches);
+      refreshViewport?.();
+    }
     return results;
   };
   filters.onsubmit=event=>event.preventDefault();
@@ -275,6 +294,7 @@ function renderCatalog(){
     map?.invalidateSize();
   };
   $("list-toggle").onclick=()=>{
+    disposeViewport?.();
     $("catalog-map").hidden=true;
     $("catalog-list").hidden=false;
     $("map-toggle").setAttribute("aria-pressed","false");
@@ -299,14 +319,15 @@ function renderCity(){
     '<div class="avatar" id="avatar" role="img" aria-label="Your character"><i></i><b></b><span></span></div></div>'+
     '<div class="map-controls"><span>'+label("Walk with arrow keys or select a point on the map.")+'</span>'+
     [["left","←"],["up","↑"],["down","↓"],["right","→"]].map(([dir,symbol])=>press(symbol,"walk",'data-direction="'+dir+'" aria-label="Walk '+dir+'"')).join("")+
-    '</div></section>'+article("Street map",'<div id="city-results">'+resultItems(items.filter(hasLocation))+'</div>')+'</div>');
+    '</div></section>'+viewportPanel()+'</div>');
   mapRows(items,true);
+  attachViewport(()=>items,()=>true);
 }
 function mapRows(records,walkable=false){
   const target=$("leaf-map");
   if(!window.L){target.textContent="The street map is unavailable.";return;}
   if(!map){
-    map=L.map(target,{scrollWheelZoom:false,keyboard:!walkable,zoomControl:true}).setView(view.city.center,walkable?17:13);
+    map=L.map(target,{scrollWheelZoom:false,keyboard:!walkable,zoomControl:true,preferCanvas:true}).setView(view.city.center,walkable?17:16);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
       maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
@@ -327,6 +348,100 @@ function mapRows(records,walkable=false){
     }).addTo(markers).bindPopup(content);
   }
 }
+function viewportPanel(){
+  return article("Places in view",'<p id="viewport-status" role="status">Loading the map…</p><div id="viewport-results" class="viewport-results"></div>');
+}
+
+function attachViewport(getCurated,allowLive){
+  if(disposeViewport)return;
+  if(!map){
+    $("viewport-status").textContent="The map is unavailable.";
+    return;
+  }
+  const currentMap=map;
+  const liveMarkers=L.layerGroup().addTo(currentMap);
+  const results=$("viewport-results");
+  const status=$("viewport-status");
+  let places=[];
+  let controller;
+  let timer;
+  let disposed=false;
+
+  const display=()=>{
+    const bounds=currentMap.getBounds();
+    const curated=getCurated().filter(record=>hasLocation(record)&&bounds.contains([record.latitude,record.longitude]));
+    const names=new Set(curated.map(record=>normalize(record.name)));
+    const visible=places.filter(record=>allowLive(record)&&!names.has(normalize(record.name)));
+    results.innerHTML=curated.length?resultItems(curated):"";
+    liveMarkers.clearLayers();
+    for(const record of visible){
+      const row=document.createElement("article");
+      row.className="record";
+      const copy=document.createElement("div");
+      const category=document.createElement("small");
+      category.textContent=t(record.category)+" · OpenStreetMap";
+      const title=document.createElement("h3");
+      title.textContent=record.name;
+      copy.append(category,title);
+      const detail=document.createElement("button");
+      detail.type="button";
+      detail.textContent=t("Details");
+      const show=()=>showDialog(record.name,'<p>'+label(record.category)+'</p>'+
+        '<p>Source: OpenStreetMap</p><a href="https://www.openstreetmap.org/?mlat='+record.latitude+
+        '&amp;mlon='+record.longitude+'#map=19/'+record.latitude+'/'+record.longitude+
+        '" target="_blank" rel="noopener noreferrer">View on OpenStreetMap</a>');
+      detail.onclick=show;
+      row.append(copy,detail);
+      results.append(row);
+      L.circleMarker([record.latitude,record.longitude],{
+        radius:5,weight:1,color:"#fffefa",fillColor:"#236044",fillOpacity:1
+      }).addTo(liveMarkers).on("click",show);
+    }
+  };
+  const schedule=()=>{
+    clearTimeout(timer);
+    controller?.abort();
+    places=[];
+    display();
+    if(currentMap.getZoom()<15){
+      status.textContent="Zoom in to see live OpenStreetMap places.";
+      return;
+    }
+    if(view.name==="jobs"){
+      status.textContent="Showing job locations in the current map area.";
+      return;
+    }
+    status.textContent="Loading places in this area…";
+    timer=setTimeout(async ()=>{
+      const request=new AbortController();
+      controller=request;
+      try {
+        const data=await loadViewportPlaces(currentMap.getBounds(),request.signal);
+        if(disposed||request.signal.aborted)return;
+        places=data.places;
+        display();
+        status.textContent=data.tooWide?"Zoom in to see live OpenStreetMap places.":
+          "Showing places in the current map area. Live data: OpenStreetMap via OpenFreeMap.";
+      } catch {
+        if(!disposed&&!request.signal.aborted)status.textContent="Live places are unavailable. Move the map to retry.";
+      }
+    },350);
+  };
+  currentMap.on("moveend",schedule);
+  currentMap.attributionControl?.addAttribution('<a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a>');
+  refreshViewport=display;
+  disposeViewport=()=>{
+    disposed=true;
+    clearTimeout(timer);
+    controller?.abort();
+    currentMap.off("moveend",schedule);
+    liveMarkers.remove();
+    refreshViewport=undefined;
+    disposeViewport=undefined;
+  };
+  schedule();
+}
+
 function walkTo(target){
   if(!map || view.name!=="city") return;
   $("avatar")?.classList.add("walking");

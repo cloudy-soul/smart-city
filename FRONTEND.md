@@ -16,7 +16,7 @@ Start the existing Spring Boot project and open its root URL. Spring Boot serves
 | `admin.html` | Preview entry, dashboard, users/roles, cities, listings, venues and time slots, news, enquiry forwarding, statuses and activity log |
 | `search.html`, `terms.html`, `privacy.html` | City-wide search and map filters, Terms of Service and Privacy Policy |
 
-Module pages have list, filters and map views. Only records with coordinates are placed on a map. The map uses OpenStreetMap tiles and the opening borders use Morocco Communes data from OpenStreetMap. See the attribution on each map. Boundary source snapshot: https://github.com/zkousama/morocco-communes/tree/4ec363333fea43e712820e20f59532bac5df0b07/data/v1/geometry (ODbL).
+Module pages have list, filters and map views. Map views add live named places from OpenStreetMap vector tiles via OpenFreeMap. The Places in view panel refreshes when the map stops moving, follows the active filters and includes only locations in the current map area. Live place records are held in memory for that view. The list tab retains the existing curated directory. The map uses OpenStreetMap tiles and the opening borders use Morocco Communes data from OpenStreetMap. See the attribution on each map. Boundary source snapshot: https://github.com/zkousama/morocco-communes/tree/4ec363333fea43e712820e20f59532bac5df0b07/data/v1/geometry (ODbL).
 
 The language switch covers the main navigation and common controls in English, French and Arabic, including RTL in Arabic. Sample content and some explanatory copy are in English.
 
