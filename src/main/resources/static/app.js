@@ -1,4 +1,4 @@
-import {liveCategories,loadViewportPlaces} from "./live-places.js";
+import {liveCategories,loadCasablancaPlaces,loadViewportPlaces} from "./live-places.js";
 import {cities} from "./assets/cities.js";
 import {regions} from "./assets/borders.js";
 import {paint} from "./artwork.js";
@@ -25,6 +25,7 @@ let map;
 let markers;
 let disposeViewport;
 let refreshViewport;
+let stopCitySearch;
 let formHandler;
 let pending;
 let travelTimer;
@@ -101,6 +102,7 @@ function renderChrome(){
 }
 
 function render(focus=false){
+  stopCitySearch?.();
   disposeViewport?.();
   map?.remove();
   map=undefined;
@@ -241,7 +243,7 @@ function filterFields(records,kind){
     (kind==="sports"?field(input("date","Event date","date")):"")+
     (kind==="jobs"?field(input("employment","Employment type","select",options("employment")),"All"):"")+
     (kind==="search"?field(input("module","City modules","select",[{value:"All",label:"All"},...Object.entries(modules).map(([value,meta])=>({value,label:meta.label}))]),"All"):"")+
-    '</div>';
+    '<button type="submit" class="action">'+label("Search")+'</button></div>';
 }
 function renderCatalog(){
   const key=view.name;
@@ -258,11 +260,12 @@ function renderCatalog(){
     '<div class="tabs">'+press("List","show-list",'id="list-toggle" aria-pressed="true"')+
     press("Map","show-map",'id="map-toggle" aria-pressed="false"')+'</div>'+
     '<p id="result-count" class="results-count" role="status"></p><div id="catalog-list"></div>'+
+    (view.city.id==="casablanca"&&key!=="jobs"?'<section id="citywide" hidden><h2>Across Casablanca</h2><p id="citywide-status" role="status"></p><div id="citywide-results"></div></section>':"")+
     '<div id="catalog-map" hidden><div class="layout"><div class="map-shell"><div id="leaf-map" class="leaf-map"></div></div>'+viewportPanel()+'</div></div>');
   const filters=$("filters");
-  const filterRecord=(record,filters)=>{
+  const filterRecord=(record,filters,matcher=searchMatch)=>{
     const {query,category,area,date,employment,module}=filters;
-    return searchMatch(query,record)&&(category==="All"||record.category===category)&&(area==="All"||record.area===area)&&
+    return matcher(query,record)&&(category==="All"||record.category===category)&&(area==="All"||record.area===area)&&
       (!date||record.date===date)&&(!employment||employment==="All"||record.employment===employment)&&
       (!module||module==="All"||record.module===module||(module==="business"&&record.module==="news"));
   };
@@ -281,9 +284,15 @@ function renderCatalog(){
       attachViewport(()=>resultsForFilters(),liveMatches);
       refreshViewport?.();
     }
+    updateCitywide();
     return results;
   };
-  filters.onsubmit=event=>event.preventDefault();
+  const updateCitywide=setupCitywideSearch(key,filters,currentFilters,filterRecord,resultsForFilters);
+  filters.onsubmit=event=>{
+    event.preventDefault();
+    if(!$("catalog-map").hidden&&$("citywide")) $("list-toggle").click();
+    else update();
+  };
   filters.oninput=update;
   $("map-toggle").onclick=()=>{
     $("catalog-map").hidden=false;
@@ -299,6 +308,7 @@ function renderCatalog(){
     $("catalog-list").hidden=false;
     $("map-toggle").setAttribute("aria-pressed","false");
     $("list-toggle").setAttribute("aria-pressed","true");
+    update();
   };
   if(view.params.get("mode")==="map") {
     $("map-toggle").click();
@@ -308,6 +318,129 @@ function renderCatalog(){
     }
   } else update();
 }
+function citywideMatch(query,record){
+  const text=normalize([record.name,record.aliases,record.category,record.kind,modules[record.module]?.label].join(" "));
+  const equivalents={
+    university:"university universite",universities:"university",universites:"university",
+    ecole:"school",ecoles:"school",museum:"museum musee",musee:"museum",musees:"museum",
+    cafe:"cafe",cafes:"cafe"
+  };
+  return normalize(query).split(/\s+/).every(word=>{
+    const variants=[word,...(Object.hasOwn(equivalents,word)?equivalents[word]:"").split(" ").filter(Boolean)];
+    if(word.length>4&&word.endsWith("s"))variants.push(word.slice(0,-1));
+    return variants.some(term=>text.includes(term));
+  });
+}
+
+function liveDetails(record){
+  const {latitude,longitude}=record;
+  showDialog(record.name,'<p>'+label(record.category)+'</p><p>Source: OpenStreetMap</p>'+
+    '<a href="https://www.openstreetmap.org/?mlat='+latitude+'&amp;mlon='+longitude+
+    '#map=19/'+latitude+'/'+longitude+'" target="_blank" rel="noopener noreferrer">View on OpenStreetMap</a>');
+}
+
+function setupCitywideSearch(key,form,currentFilters,filterRecord,getCurated){
+  const section=$("citywide");
+  if(!section)return ()=>{};
+  const status=$("citywide-status");
+  const results=$("citywide-results");
+  let tileResults;
+  let active;
+  let timer;
+  let failed=false;
+  let progress="";
+  let limit=60;
+  let previousQuery="";
+  const visible=()=>!section.hidden;
+
+  function display(){
+    if(!visible())return;
+    results.replaceChildren();
+    if(!tileResults){
+      status.textContent=failed?"Live citywide search is unavailable. The Atlas listings above are still available.":
+        progress||"Looking for places across Casablanca…";
+      if(failed){
+        const retry=document.createElement("button");
+        retry.type="button";
+        retry.textContent="Retry search";
+        retry.onclick=()=>{
+          failed=false;
+          display();
+          load();
+        };
+        results.append(retry);
+      }
+      return;
+    }
+    const current=currentFilters();
+    const curatedNames=new Set(getCurated().map(record=>normalize(record.name)));
+    const matches=tileResults.places.filter(record=>
+      (key==="search"||record.module===key)&&!curatedNames.has(normalize(record.name))&&
+      filterRecord(record,current,citywideMatch)
+    );
+    status.textContent=matches.length+" matching OpenStreetMap places."+
+      (tileResults.failed?" Some parts of the city could not be loaded.":"");
+    for(const record of matches.slice(0,limit)){
+      const row=document.createElement("article");
+      row.className="record";
+      const copy=document.createElement("div");
+      const category=document.createElement("small");
+      category.textContent=t(record.category)+" · OpenStreetMap";
+      const title=document.createElement("h3");
+      title.textContent=record.name;
+      copy.append(category,title);
+      const detail=document.createElement("button");
+      detail.type="button";
+      detail.textContent=t("Details");
+      detail.onclick=()=>liveDetails(record);
+      row.append(copy,detail);
+      results.append(row);
+    }
+    if(matches.length>limit){
+      const more=document.createElement("button");
+      more.type="button";
+      more.textContent="Show more places";
+      more.onclick=()=>{limit+=60;display();};
+      results.append(more);
+    }
+  }
+
+  async function load(){
+    if(active||tileResults)return;
+    const request=new AbortController();
+    active=request;
+    progress="";
+    try{
+      tileResults=await loadCasablancaPlaces(request.signal,(done,total)=>{
+        progress="Looking across Casablanca ("+done+" of "+total+" map tiles)…";
+        if(!request.signal.aborted&&visible())status.textContent=progress;
+      });
+    }catch{
+      if(!request.signal.aborted)failed=true;
+    }finally{
+      active=undefined;
+      if(!request.signal.aborted)display();
+    }
+  }
+  form.querySelector('[name="query"]').placeholder="Search across Casablanca";
+  stopCitySearch=()=>{
+    clearTimeout(timer);
+    active?.abort();
+    stopCitySearch=undefined;
+  };
+  return ()=>{
+    const filters=currentFilters();
+    const query=normalize(filters.query);
+    const signature=JSON.stringify(filters);
+    section.hidden=!$("catalog-map").hidden||(query.length<2&&filters.category==="All");
+    if(signature!==previousQuery){limit=60;previousQuery=signature;}
+    clearTimeout(timer);
+    if(!visible())return;
+    display();
+    if(!active&&!tileResults&&!failed)timer=setTimeout(load,350);
+  };
+}
+
 const hasLocation=record=>Number.isFinite(record.latitude)&&Number.isFinite(record.longitude)&&
   Math.abs(record.latitude)<=90&&Math.abs(record.longitude)<=180;
 
@@ -386,10 +519,7 @@ function attachViewport(getCurated,allowLive){
       const detail=document.createElement("button");
       detail.type="button";
       detail.textContent=t("Details");
-      const show=()=>showDialog(record.name,'<p>'+label(record.category)+'</p>'+
-        '<p>Source: OpenStreetMap</p><a href="https://www.openstreetmap.org/?mlat='+record.latitude+
-        '&amp;mlon='+record.longitude+'#map=19/'+record.latitude+'/'+record.longitude+
-        '" target="_blank" rel="noopener noreferrer">View on OpenStreetMap</a>');
+      const show=()=>liveDetails(record);
       detail.onclick=show;
       row.append(copy,detail);
       results.append(row);
