@@ -1,0 +1,266 @@
+# Generation report
+
+- Tool: diagram2app 0.1.0
+- Source: `classsmart.xml` (sha256 `499b01339f2391d3…`)
+- Target: java / spring-boot
+- Build tool: maven
+- Persistence: yes (Users, Students, Admin, Tourists, CV, Company, Token, OnlineSession, BaseEntity, City, Place, TourismPlace, EducationalInstitution, Venue, SportEvent, Job, Booking, JobApplication, Monitoring; postgresql)
+- Authentication: none
+- Files generated: 184
+
+## Explicit stubs - behaviour not specified (you must implement or specify these)
+
+- Students.updateStudentProfile()
+- CV.updateMetadata()
+- CV.generateLink()
+- mediaAgent.generateLink()
+- mediaAgent.generatePath()
+- Interface1.generateLink()
+- ForwardAgent.generateLink()
+- ForwardAgent.forward()
+- Token.isExpired()
+- OnlineSession.startSession()
+- OnlineSession.endSession()
+- OnlineSession.validateSession()
+- Place.getName()
+- Place.getCoordinates()
+- Booking.confirmBooking()
+- Booking.cancelBooking()
+- JobApplication.submitApplication()
+- JobApplication.updateStatus()
+- Monitoring.recordEvent()
+- Monitoring.retrieveRecords()
+- UserRepository.save()
+- UserRepository.findById()
+- PlaceRepository.save()
+- PlaceRepository.findById()
+- PlaceRepository.findAll()
+- BookingRepository.save()
+- BookingRepository.findById()
+- JobRepository.save()
+- JobRepository.findById()
+- JobRepository.findAll()
+- MonitoringRepository.save()
+- MonitoringRepository.findBySource()
+- UserService.createUser()
+- UserService.updateUser()
+- UserService.findUser()
+- SearchStrategy.search()
+- PlaceSearchStrategy.search()
+- EventSearchStrategy.search()
+- SearchService.search()
+- PlaceFactory.createPlace()
+- AuthService.authenticate()
+- AuthService.register()
+- AuthService.resetPassword()
+- AuthService.logout()
+- PasswordEncoder.encode()
+- PasswordEncoder.matches()
+- JwtService.generateToken()
+- JwtService.validateToken()
+- JwtService.extractUser()
+- JwtAuthenticationFilter.authenticateRequest()
+- AccessControlService.checkPermission()
+- AccessControlService.checkRole()
+- AccessControlService.checkOwnership()
+- RateLimitFilter.checkRequestLimit()
+- RateLimitFilter.blockExcessRequests()
+- InputSanitizer.validateInput()
+- InputSanitizer.sanitizeInput()
+- OutputEncoder.encodeOutput()
+- SecurityConfig.configureAuthentication()
+- SecurityConfig.configureAuthorization()
+- CorsConfig.configureAllowedOrigins()
+- SecurityHeadersConfig.configureSecurityHeaders()
+- PlaceService.createPlace()
+- PlaceService.updatePlace()
+- PlaceService.deletePlace()
+- PlaceService.listPlaces()
+- BookingService.createBooking()
+- BookingService.confirmBooking()
+- BookingService.cancelBooking()
+- JobService.publishJob()
+- JobService.findJob()
+- JobService.listJobs()
+
+## Method bodies derived from naming conventions (inference - please review)
+
+- Account.getUsername(): getUsername() returns field 'username' (accessor convention)
+- SearchService.setStrategy(): setStrategy() assigns field 'strategy' (mutator convention)
+
+## Method bodies from your specifications
+
+- Users.getFullName()
+- Users.updateContactDetails() (user-supplied Java code)
+
+## Assumptions made
+
+- Association Company—ForwardAgent has no navigability arrows; policy 'bidirectional' was applied.
+- Association Account—OnlineSession has no navigability arrows; policy 'bidirectional' was applied.
+- Multiplicity of Users->Students is not given; assumed single and optional (0..1).
+- Multiplicity of Users->Admin is not given; assumed single and optional (0..1).
+- Multiplicity of Company->ForwardAgent is not given; assumed single and optional (0..1).
+- Multiplicity of ForwardAgent->Company is not given; assumed single and optional (0..1).
+- Multiplicity of Users->OnlineSession is not given; assumed single and optional (0..1).
+- Multiplicity of Account->OnlineSession is not given; assumed single and optional (0..1).
+- Multiplicity of OnlineSession->Account is not given; assumed single and optional (0..1).
+- Multiplicity of Booking->Venue is not given; assumed single and optional (0..1).
+- Multiplicity of JobApplication->Job is not given; assumed single and optional (0..1).
+- Multiplicity of Job->Company is not given; assumed single and optional (0..1).
+- Multiplicity of Students->EducationalInstitution is not given; assumed single and optional (0..1).
+- Multiplicity of Booking->BookingStatus is not given; assumed single and optional (0..1).
+- Association end Booking->BookingStatus was merged with the declared attribute 'status'.
+- Multiplicity of JobApplication->ApplicationStatus is not given; assumed single and optional (0..1).
+- Association end JobApplication->ApplicationStatus was merged with the declared attribute 'status'.
+- Multiplicity of SearchService->SearchStrategy is not given; assumed single and optional (0..1).
+- Association end SearchService->SearchStrategy was merged with the declared attribute 'strategy'.
+- Multiplicity of UserService->UserRepository is not given; assumed single and optional (0..1).
+- Multiplicity of PlaceService->PlaceRepository is not given; assumed single and optional (0..1).
+- Multiplicity of JobService->JobRepository is not given; assumed single and optional (0..1).
+- Multiplicity of AuthService->UserRepository is not given; assumed single and optional (0..1).
+- Multiplicity of AuthService->PasswordEncoder is not given; assumed single and optional (0..1).
+- Multiplicity of AuthService->JwtService is not given; assumed single and optional (0..1).
+- Multiplicity of JwtAuthenticationFilter->JwtService is not given; assumed single and optional (0..1).
+- Multiplicity of SecurityConfig->JwtAuthenticationFilter is not given; assumed single and optional (0..1).
+- Multiplicity of SecurityConfig->RateLimitFilter is not given; assumed single and optional (0..1).
+- Multiplicity of SecurityConfig->CorsConfig is not given; assumed single and optional (0..1).
+- Multiplicity of SecurityConfig->SecurityHeadersConfig is not given; assumed single and optional (0..1).
+- Multiplicity of AccessControlService->Role is not given; assumed single and optional (0..1).
+- Multiplicity of AccessControlService->BookingRepository is not given; assumed single and optional (0..1).
+- Multiplicity of UserService->InputSanitizer is not given; assumed single and optional (0..1).
+- Multiplicity of UserService->OutputEncoder is not given; assumed single and optional (0..1).
+- Multiplicity of Users->Tourists is not given; assumed single and optional (0..1).
+- Multiplicity of JobApplication->CV is not given; assumed single and optional (0..1).
+- Multiplicity of BookingService->UserRepository is not given; assumed single and optional (0..1).
+- Association end OnlineSession->Cookies was merged with the declared attribute 'cookies'.
+- Association end OnlineSession->Token was merged with the declared attribute 'token'.
+- Multiplicity of BookingService->BookingRepository is not given; assumed single and optional (0..1).
+- Multiplicity of SecurityConfig->AccessControlService is not given; assumed single and optional (0..1).
+- Multiplicity of AccessControlService->UserRepository is not given; assumed single and optional (0..1).
+- Role.ROLE_USER is public in the diagram; generated private with accessors (encapsulation policy).
+- Role.ROLE_STUDENT is public in the diagram; generated private with accessors (encapsulation policy).
+- Role.ROLE_ADMIN is public in the diagram; generated private with accessors (encapsulation policy).
+- Role.ROLE_TOURIST is public in the diagram; generated private with accessors (encapsulation policy).
+- mediaAgent.fileName is public in the diagram; generated private with accessors (encapsulation policy).
+- mediaAgent.fileType is public in the diagram; generated private with accessors (encapsulation policy).
+- ForwardAgent.destination is public in the diagram; generated private with accessors (encapsulation policy).
+- ForwardAgent.forwardingType is public in the diagram; generated private with accessors (encapsulation policy).
+- Token.id is public in the diagram; generated private with accessors (encapsulation policy).
+- Token.creationDate is public in the diagram; generated private with accessors (encapsulation policy).
+- Token.expirationDateTime is public in the diagram; generated private with accessors (encapsulation policy).
+- Token.tokenValue is public in the diagram; generated private with accessors (encapsulation policy).
+- BookingStatus.PENDING is public in the diagram; generated private with accessors (encapsulation policy).
+- BookingStatus.CONFIRMED is public in the diagram; generated private with accessors (encapsulation policy).
+- BookingStatus.CANCELLED is public in the diagram; generated private with accessors (encapsulation policy).
+- ApplicationStatus.PENDING is public in the diagram; generated private with accessors (encapsulation policy).
+- ApplicationStatus.ACCEPTED is public in the diagram; generated private with accessors (encapsulation policy).
+- ApplicationStatus.REJECTED is public in the diagram; generated private with accessors (encapsulation policy).
+- Monitoring.recordType is public in the diagram; generated private with accessors (encapsulation policy).
+- Monitoring.source is public in the diagram; generated private with accessors (encapsulation policy).
+- Monitoring.status is public in the diagram; generated private with accessors (encapsulation policy).
+- Monitoring.data cannot be stored (type Map); marked @Transient.
+- Monitoring.data is public in the diagram; generated private with accessors (encapsulation policy).
+- Monitoring.timestamp is public in the diagram; generated private with accessors (encapsulation policy).
+- Users: constructor parameter 'account' is not exposed in the DTO; null is passed when building from a request.
+- OnlineSession: constructor parameter 'cookies' is not exposed in the DTO; null is passed when building from a request.
+- Booking: constructor parameter 'status' is not exposed in the DTO; null is passed when building from a request.
+- JobApplication: constructor parameter 'status' is not exposed in the DTO; null is passed when building from a request.
+- Monitoring: constructor parameter 'data' is not exposed in the DTO; null is passed when building from a request.
+- Spring Boot 3.3.5: entities are exposed under /api/<plural table name> with DTO records; references are exchanged as ids (<attribute>Id / <attribute>Ids).
+
+## Information the diagram does not contain
+
+- Multiplicity of Users—Students is not given; treated as single/optional.
+- Multiplicity of Users—Admin is not given; treated as single/optional.
+- Multiplicity of Company—ForwardAgent is not given; treated as single/optional.
+- Multiplicity of Users—OnlineSession is not given; treated as single/optional.
+- Multiplicity of Account—OnlineSession is not given; treated as single/optional.
+- Multiplicity of Booking—Venue is not given; treated as single/optional.
+- Multiplicity of JobApplication—Job is not given; treated as single/optional.
+- Multiplicity of Job—Company is not given; treated as single/optional.
+- Multiplicity of Students—EducationalInstitution is not given; treated as single/optional.
+- Multiplicity of Booking—BookingStatus is not given; treated as single/optional.
+- Multiplicity of JobApplication—ApplicationStatus is not given; treated as single/optional.
+- Multiplicity of SearchService—SearchStrategy is not given; treated as single/optional.
+- Multiplicity of UserService—UserRepository is not given; treated as single/optional.
+- Multiplicity of PlaceService—PlaceRepository is not given; treated as single/optional.
+- Multiplicity of JobService—JobRepository is not given; treated as single/optional.
+- Multiplicity of AuthService—UserRepository is not given; treated as single/optional.
+- Multiplicity of AuthService—PasswordEncoder is not given; treated as single/optional.
+- Multiplicity of AuthService—JwtService is not given; treated as single/optional.
+- Multiplicity of JwtAuthenticationFilter—JwtService is not given; treated as single/optional.
+- Multiplicity of SecurityConfig—JwtAuthenticationFilter is not given; treated as single/optional.
+- Multiplicity of SecurityConfig—RateLimitFilter is not given; treated as single/optional.
+- Multiplicity of SecurityConfig—CorsConfig is not given; treated as single/optional.
+- Multiplicity of SecurityConfig—SecurityHeadersConfig is not given; treated as single/optional.
+- Multiplicity of AccessControlService—Role is not given; treated as single/optional.
+- Multiplicity of AccessControlService—BookingRepository is not given; treated as single/optional.
+- Multiplicity of UserService—InputSanitizer is not given; treated as single/optional.
+- Multiplicity of UserService—OutputEncoder is not given; treated as single/optional.
+- Multiplicity of Users—Tourists is not given; treated as single/optional.
+- Multiplicity of JobApplication—CV is not given; treated as single/optional.
+- Multiplicity of BookingService—UserRepository is not given; treated as single/optional.
+- Multiplicity of BookingService—BookingRepository is not given; treated as single/optional.
+- Multiplicity of SecurityConfig—AccessControlService is not given; treated as single/optional.
+- Multiplicity of AccessControlService—UserRepository is not given; treated as single/optional.
+- Type 'Coordinates' (used in Place.getCoordinates()) is neither a class in the diagram nor a known library type. Add it to the diagram or map it to a known type.
+- 72 method(s) have no specified behaviour and will be generated as explicit stubs: Students.updateStudentProfile(), CV.updateMetadata(), CV.generateLink(), mediaAgent.generateLink(), mediaAgent.generatePath(), Interface1.generateLink(), ForwardAgent.generateLink(), ForwardAgent.forward(), Token.isExpired(), OnlineSession.startSession() ….
+- Rule 'BR01: The Smart City application shall provide six modules: Administra' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR02: The Administration module shall manage city information and user' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR03: The Tourism module shall provide information about hotels, resta' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR04: Users shall be able to search and view tourism information.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR05: The Student module shall provide information about universities,' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR06: Educational establishments shall be associated with a city.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR07: The Sport Events module shall display sporting events, dates, ve' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR08: Users shall be able to reserve or purchase tickets for sporting ' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR09: Every sporting event shall be associated with a venue.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR10: The Job Applicant module shall display job opportunities in diff' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR11: Each job listing shall be associated with a company or employer.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR12: The Business module shall provide information about businesses, ' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR13: Users shall be able to search and view city information across t' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR14: Location information shall be displayed on a map when coordinate' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR15: Registered users shall have unique email addresses.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR16: A registered user may have multiple roles, including USER, STUDE' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR17: Students shall be able to manage their own CV records.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR18: Registered users shall be able to submit job applications.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR19: Job applications shall not be submitted after the job deadline.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR20: A user shall not have duplicate active applications for the same' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR21: Registered users shall be able to view their own bookings and jo' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR22: A venue reservation shall have a start time earlier than its end' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR23: Confirmed venue reservations shall not overlap for the same venu' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR24: Users shall be able to save and view favourite city listings.' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR25: Only authorised administrators shall modify protected city recor' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR26: Users shall only modify their own personal information, CVs, boo' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Rule 'BR27: Detailed authentication and authorisation rules shall be finalis' is prose only; the generator cannot execute it. Specify the behaviour of the method(s) that enforce it.
+- Tourists.preferredLanguage: possible validation requirement (numeric range (e.g. non-negative / minimum)); none is specified.
+- Role.ROLE_TOURIST: possible validation requirement (URL format); none is specified.
+- EducationalInstitution.website: possible validation requirement (URL format); none is specified.
+- Students is persistent but has no identifier attribute; a generated 'id' will be added.
+- Admin is persistent but has no identifier attribute; a generated 'id' will be added.
+- Tourists is persistent but has no identifier attribute; a generated 'id' will be added.
+- CV is persistent but has no identifier attribute; a generated 'id' will be added.
+- Company is persistent but has no identifier attribute; a generated 'id' will be added.
+- SportEvent is persistent but has no identifier attribute; a generated 'id' will be added.
+- Monitoring is persistent but has no identifier attribute; a generated 'id' will be added.
+- No class is explicitly marked persistent; storage needs are unknown.
+- Error-handling policy is not part of the diagram (what should happen when an operation fails?).
+- Constructor policy is not part of the diagram; default: one constructor taking scalar attributes and required references.
+
+## Not generated
+
+- Unit tests for Role: no valid sample instance can be built (abstract/interface dependency, cycle, or a 'pattern' constraint without an example).
+- Unit tests for Booking: no valid sample instance can be built (abstract/interface dependency, cycle, or a 'pattern' constraint without an example).
+- Unit tests for JobApplication: no valid sample instance can be built (abstract/interface dependency, cycle, or a 'pattern' constraint without an example).
+- Unit tests for BookingStatus: no valid sample instance can be built (abstract/interface dependency, cycle, or a 'pattern' constraint without an example).
+- Unit tests for ApplicationStatus: no valid sample instance can be built (abstract/interface dependency, cycle, or a 'pattern' constraint without an example).
+- API tests for CV: a valid request body cannot be built (pattern without example, or a cyclic/abstract required reference).
+- API tests for Token: a valid request body cannot be built (pattern without example, or a cyclic/abstract required reference).
+- API tests for OnlineSession: a valid request body cannot be built (pattern without example, or a cyclic/abstract required reference).
+- API tests for JobApplication: a valid request body cannot be built (pattern without example, or a cyclic/abstract required reference).
+- API tests for Monitoring: a valid request body cannot be built (pattern without example, or a cyclic/abstract required reference).
+
+## Limitations of this target
+
+- Declared service/controller/repository classes are generated as plain classes; no HTTP mapping is invented for their methods.
+- Embedded value objects, element collections and transient attributes are stored but not exposed through the DTOs.
+- This build could not be compiled against the real framework artifacts in the generation environment; run the build tool to confirm.

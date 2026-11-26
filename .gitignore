@@ -1,0 +1,20 @@
+# build output
+target/
+build/
+.gradle/
+out/
+*.class
+*.log
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+db.sqlite3
+*.db
+# ide
+.idea/
+.vscode/
+*.iml
+.DS_Store

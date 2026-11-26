@@ -1,0 +1,416 @@
+{
+  "answers": {
+    "app_kind": "rest-api",
+    "auth": "none",
+    "base_package.java": "com.smartcity",
+    "build_tool": "maven",
+    "database": "postgresql",
+    "framework": "spring-boot",
+    "java_version": 17,
+    "language": "java",
+    "persisted_classes": [
+      "Users",
+      "Students",
+      "Admin",
+      "Tourists",
+      "CV",
+      "Company",
+      "Token",
+      "OnlineSession",
+      "City",
+      "TourismPlace",
+      "EducationalInstitution",
+      "Venue",
+      "SportEvent",
+      "Job",
+      "Booking",
+      "JobApplication",
+      "Monitoring"
+    ],
+    "persistence": true,
+    "project_name": "smart_city",
+    "tests": true,
+    "undirected_associations": "bidirectional"
+  },
+  "constraints": [
+    {
+      "example": null,
+      "kind": "email",
+      "target": "Users.email",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_null",
+      "target": "Users.phone",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_null",
+      "target": "Users.zipcode",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_null",
+      "target": "Users.userCode",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_null",
+      "target": "Tourists.touristID",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Account.username",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Account.passwordHash",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "CV.title",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Company.name",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Company.title",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Company.phone",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Company.email",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "City.name",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Place.name",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "EducationalInstitution.contactEmail",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "SportEvent.title",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "SportEvent.ticketPrice",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Job.title",
+      "value": null
+    },
+    {
+      "example": null,
+      "kind": "not_blank",
+      "target": "Job.salary",
+      "value": null
+    }
+  ],
+  "method_behaviors": {
+    "Users.getFullName()": {
+      "ops": [
+        {
+          "field": "firstname",
+          "op": "return_field"
+        }
+      ]
+    },
+    "Users.updateContactDetails(String,String)": {
+      "code": {
+        "java": "\nthis.phone = phone;\nthis.address = address;"
+      }
+    }
+  },
+  "resolutions": {
+    "unparsed_member:dtxoXvljJ-21JxHqkB47-425:«enumeration»": {
+      "action": "ignore"
+    },
+    "unparsed_member:dtxoXvljJ-21JxHqkB47-468:#generateLink() String": {
+      "action": "member",
+      "text": "#generateLink(): String"
+    },
+    "unparsed_member:solid-updated-9015:+getFullName() String": {
+      "action": "member",
+      "text": "+getFullName(): String"
+    },
+    "unparsed_member:solid-updated-9016:+updateContactDetails(String phone, String address) void": {
+      "action": "member",
+      "text": "+updateContactDetails(String phone, String address): void"
+    },
+    "unparsed_member:solid-updated-9020:+updateStudentProfile() void": {
+      "action": "member",
+      "text": "+updateStudentProfile(): void"
+    },
+    "unparsed_member:solid-updated-9029:+getUsername() String": {
+      "action": "member",
+      "text": "+getUsername(): String"
+    },
+    "unparsed_member:solid-updated-9041:+updateMetadata(String title, String description) void": {
+      "action": "member",
+      "text": "+updateMetadata(String title, String description): void"
+    },
+    "unparsed_member:solid-updated-9042:+generateLink() String": {
+      "action": "member",
+      "text": "+generateLink():Striing"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-692": {
+      "action": "relationship",
+      "kind": "composition",
+      "source": "Users",
+      "source_mult": "1",
+      "target": "Account",
+      "target_mult": "1",
+      "target_role": ""
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-693": {
+      "action": "relationship",
+      "kind": "directed",
+      "source": "Users",
+      "source_mult": "0..*",
+      "target": "Role",
+      "target_mult": "0..*",
+      "target_role": "roles"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-694": {
+      "action": "relationship",
+      "kind": "aggregation",
+      "source": "Students",
+      "source_mult": "1",
+      "target": "CV",
+      "target_mult": "0..*",
+      "target_role": "cvs"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-695": {
+      "action": "relationship",
+      "kind": "dependency",
+      "source": "mediaAgent",
+      "target": "CV"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-700": {
+      "action": "relationship",
+      "kind": "directed",
+      "source": "OnlineSession",
+      "source_mult": "1",
+      "target": "Cookies",
+      "target_mult": "0..1",
+      "target_role": "cookies"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-701": {
+      "action": "relationship",
+      "kind": "directed",
+      "source": "OnlineSession",
+      "source_mult": "1",
+      "target": "Token",
+      "target_mult": "0..1",
+      "target_role": "token"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-735": {
+      "action": "relationship",
+      "kind": "directed",
+      "source": "BookingService",
+      "source_mult": "",
+      "target": "BookingRepository",
+      "target_mult": "",
+      "target_role": "bookingRepository"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-743": {
+      "action": "relationship",
+      "kind": "directed",
+      "source": "SecurityConfig",
+      "source_mult": "",
+      "target": "AccessControlService",
+      "target_mult": "",
+      "target_role": "accessControlService"
+    },
+    "unresolved_connector:dtxoXvljJ-21JxHqkB47-747": {
+      "action": "relationship",
+      "kind": "directed",
+      "source": "AccessControlService",
+      "source_mult": "",
+      "target": "UserRepository",
+      "target_mult": "",
+      "target_role": "userRepository"
+    }
+  },
+  "roles": {},
+  "statements": [
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR01: The Smart City application shall provide six modules: Administration, Tourism, Student, Sport Events, Job Applicant, and Business."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR02: The Administration module shall manage city information and user profiles."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR03: The Tourism module shall provide information about hotels, restaurants, tourist attractions, ATMs, theatres, and related services."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR04: Users shall be able to search and view tourism information."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR05: The Student module shall provide information about universities, colleges, libraries, coaching centres, and educational establishments."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR06: Educational establishments shall be associated with a city."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR07: The Sport Events module shall display sporting events, dates, venues, and locations."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR08: Users shall be able to reserve or purchase tickets for sporting events."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR09: Every sporting event shall be associated with a venue."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR10: The Job Applicant module shall display job opportunities in different industries."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR11: Each job listing shall be associated with a company or employer."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR12: The Business module shall provide information about businesses, industries, business centres, and relevant news."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR13: Users shall be able to search and view city information across the six modules."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR14: Location information shall be displayed on a map when coordinates are available."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR15: Registered users shall have unique email addresses."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR16: A registered user may have multiple roles, including USER, STUDENT, ADMIN, and TOURIST."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR17: Students shall be able to manage their own CV records."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR18: Registered users shall be able to submit job applications."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR19: Job applications shall not be submitted after the job deadline."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR20: A user shall not have duplicate active applications for the same job."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR21: Registered users shall be able to view their own bookings and job applications."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR22: A venue reservation shall have a start time earlier than its end time."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR23: Confirmed venue reservations shall not overlap for the same venue."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR24: Users shall be able to save and view favourite city listings."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR25: Only authorised administrators shall modify protected city records."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR26: Users shall only modify their own personal information, CVs, bookings, and applications unless explicitly authorised."
+    },
+    {
+      "applies_to": null,
+      "kind": "business_rules",
+      "text": "BR27: Detailed authentication and authorisation rules shall be finalised during the security implementation phase."
+    }
+  ],
+  "version": 1
+}
