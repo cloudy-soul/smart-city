@@ -7,10 +7,18 @@ import {$,normalize,lang,t,esc,field,input,press,link,searchMatch,values} from "
 const root=$("app");
 const dialog=$("dialog");
 const storageKey="atlas-frontend-preview-v1";
-const defaultState={records:seed,user:null,guest:false,profiles:{},cvs:[],favourites:[]};
+const defaultState={catalogVersion:1,records:seed,user:null,guest:false,profiles:{},cvs:[],favourites:[]};
 let state;
 try { state=JSON.parse(sessionStorage.getItem(storageKey)) || structuredClone(defaultState); }
 catch { state=structuredClone(defaultState); }
+if (!state.catalogVersion) {
+  const selaPark=seed.find(record=>record.id==="sela-park");
+  if (!state.records.some(record=>record.id===selaPark.id)) {
+    state.records.push(structuredClone(selaPark));
+  }
+  state.catalogVersion=1;
+  save();
+}
 let view;
 let map;
 let markers;
@@ -272,7 +280,13 @@ function renderCatalog(){
     $("map-toggle").setAttribute("aria-pressed","false");
     $("list-toggle").setAttribute("aria-pressed","true");
   };
-  if(view.params.get("mode")==="map") $("map-toggle").click(); else update();
+  if(view.params.get("mode")==="map") {
+    $("map-toggle").click();
+    const selected=getRecord(view.params.get("focus"));
+    if(map && selected?.city===view.city.id && hasLocation(selected)) {
+      map.setView([selected.latitude,selected.longitude],17);
+    }
+  } else update();
 }
 const hasLocation=record=>Number.isFinite(record.latitude)&&Number.isFinite(record.longitude)&&
   Math.abs(record.latitude)<=90&&Math.abs(record.longitude)<=180;
@@ -346,7 +360,7 @@ function renderRecord(record,title){
     (record.module==="sports"?press("Reserve tickets","reserve",actionAttribute,"primary"):"")+
     (record.module==="jobs"?press("Apply","apply",actionAttribute,"primary"):"")+
     (record.module==="business"?press("Send enquiry","enquiry",actionAttribute,"primary"):"")+
-    (hasLocation(record)?link("View on map",cityPath(view.name,{mode:"map"}),"action"):"")+'</div></section>');
+    (hasLocation(record)?link("View on map",cityPath(view.name,{mode:"map",focus:record.id}),"action"):"")+'</div></section>');
 }
 
 function chooseAction(action,record){

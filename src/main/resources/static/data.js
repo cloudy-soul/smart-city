@@ -47,6 +47,7 @@ const venue="Mohammed V Stadium";
 
 export const seed = [
   sample("mosque","tourism","Hassan II Mosque","Landmark",{area:"Waterfront",latitude:33.6086,longitude:-7.6327,description:"Visit the mosque on Casablanca’s Atlantic waterfront."}),
+  sample("sela-park","tourism","Sela Park Casablanca","Shopping",{area:"Almaz",address:"Junction of Pénétrante d’Azbane and Rocade Sud-Ouest",latitude:33.50858,longitude:-7.66996,hours:"09:00–22:00",website:"https://sela.ma/sela-park-casablanca/",description:"A retail park with shops, restaurants and family entertainment.",example:false}),
   sample("habous","tourism","Habous Quarter","Shopping",{area:"Habous",description:"Bookshops, craft stalls and covered arcades."}),
   sample("hotel","tourism","Waterfront hotel","Accommodation",{area:"Waterfront",description:"Sample hotel listing for a stay near the water."}),
   sample("cafe","tourism","Medina café","Restaurant",{area:"Old Medina",description:"Sample café listing."}),
