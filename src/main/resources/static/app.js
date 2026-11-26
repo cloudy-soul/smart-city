@@ -1,3 +1,4 @@
+import {adminColumns,adminGroups,adminRelations,dependentRecord,fillRelatedFields,linkLegacyRecords,refreshRelatedRecords,updateBookingStatus,validateAdminRecord} from "./admin-data.js";
 import {cookieLabel,rememberLanguage,updateCookieBanner} from "./cookie-banner.js";
 import {liveCategories,loadCasablancaPlaces,loadViewportPlaces} from "./live-places.js";
 import {cities} from "./assets/cities.js";
@@ -9,7 +10,14 @@ import {$,normalize,lang,t,esc,field,input,press,link,searchMatch,values} from "
 const root=$("app");
 const dialog=$("dialog");
 const storageKey="atlas-frontend-preview-v1";
-const defaultState={catalogVersion:1,records:seed,user:null,guest:false,profiles:{},cvs:[],favourites:[]};
+const initialRecords=structuredClone(seed);
+for(const city of cities){
+  if(initialRecords.some(row=>row.module==="cities"&&row.city===city.id))continue;
+  initialRecords.push({id:"city-"+city.id,module:"cities",city:city.id,name:city.name,country:"Morocco",
+    latitude:city.center[0],longitude:city.center[1]});
+}
+linkLegacyRecords(initialRecords);
+const defaultState={catalogVersion:2,records:initialRecords,user:null,guest:false,profiles:{},cvs:[],favourites:[]};
 let state;
 try { state=JSON.parse(sessionStorage.getItem(storageKey)) || structuredClone(defaultState); }
 catch { state=structuredClone(defaultState); }
@@ -19,6 +27,18 @@ if (!state.catalogVersion) {
     state.records.push(structuredClone(selaPark));
   }
   state.catalogVersion=1;
+}
+if(state.catalogVersion<2){
+  const existingCities=new Set();
+  for(const row of state.records.filter(item=>item.module==="cities")){
+    if(!row.city||existingCities.has(row.city))row.city="city-"+row.id;
+    existingCities.add(row.city);
+  }
+  for(const city of initialRecords.filter(row=>row.module==="cities")){
+    if(!state.records.some(row=>row.module==="cities"&&row.city===city.city))state.records.push(structuredClone(city));
+  }
+  linkLegacyRecords(state.records);
+  state.catalogVersion=2;
   save();
 }
 let view;
@@ -42,9 +62,16 @@ const label=key=>esc(t(key));
 const info=text=>'<p class="notice">'+label(text)+'</p>';
 const tags=(title,description="")=>'<header class="page-head"><div><h1>'+label(title)+'</h1>'+(description?'<p>'+label(description)+'</p>':'')+'</div></header>';
 const page=(body)=>'<div class="wrap">'+body+'</div>';
-const cityById=key=>cities.find(city=>city.id===key);
+const directoryCities=()=>state.records.filter(row=>row.module==="cities").map(row=>{
+  const original=cities.find(city=>city.id===row.city);
+  const center=Number.isFinite(row.latitude)&&Number.isFinite(row.longitude)
+    ?[row.latitude,row.longitude]:original?.center;
+  return {...original,id:row.city,name:row.name,center,landmark:original?.landmark||row.name};
+}).filter(city=>city.center);
+const cityById=key=>directoryCities().find(city=>city.id===key);
+const defaultCity=()=>cityById("casablanca")||directoryCities()[0];
 const owner=()=>state.user?.email || "";
-const isAdmin=()=>state.user?.role==="Administrator";
+const inAdmin=()=>view.name==="admin";
 const canUse=()=>Boolean(state.user);
 const byId=key=>state.records.find(record=>record.id===key);
 const article=(title,body)=>'<section class="panel stack"><h2>'+label(title)+'</h2>'+body+'</section>';
@@ -62,7 +89,7 @@ function readView(){
   const url=new URL(location.href);
   const filename=url.pathname.split("/").pop().replace(/\.html$/,"");
   const name=filename===""||filename==="index"?"home":filename;
-  return {name,params:url.searchParams,city:cityById(url.searchParams.get("city")) || cityById("casablanca")};
+  return {name,params:url.searchParams,city:cityById(url.searchParams.get("city")) || defaultCity()};
 }
 function navigate(href,replace=false){
   const url=new URL(href,location.href);
@@ -74,9 +101,10 @@ function notification(text){
   notice=text;
   render();
 }
-function log(name,description="",status="Preview"){
-  state.records.unshift({id:id(),module:"activity",name,description,status,source:owner()||"Guest",date:new Date().toISOString()});
+function log(name,description="",status="Preview",source=owner()||"Guest"){
+  state.records.unshift({id:id(),module:"activity",name,description,status,source,date:new Date().toISOString()});
 }
+function adminLog(name,description){log(name,description,"Local","Local administrator");}
 function change(language){
   rememberLanguage(language);
   document.documentElement.lang=language;
@@ -162,10 +190,10 @@ function requireUser(action){
 }
 
 function renderHome(){
-  preview=preview || cityById("casablanca");
+  preview=cityById(preview?.id)||defaultCity();
   const regionPaths=regions.map(([fill,d])=>'<path class="region" fill="'+fill+'" d="'+d+'"/>').join("");
   const townPaths=regions.map(([, ,d])=>'<path class="municipal" d="'+d+'"/>').join("");
-  const pins=cities.map(city=>{
+  const pins=directoryCities().map(city=>{
     const [lat,lon]=city.center;
     const x=45+(lon+18)*32,y=25+(36.7-lat)*28;
     return '<button class="pin" type="button" data-action="enter" data-city="'+city.id+'" style="left:'+x/6+'%;top:'+y/5+'%" aria-label="'+esc(city.name+" · "+city.landmark)+'"><span>'+esc(city.name)+'</span></button>';
@@ -174,7 +202,7 @@ function renderHome(){
     '<h1>'+label("Discover")+'<br><em>'+label("Morocco.")+'</em></h1>'+
     '<p>'+label("Explore landmarks, city streets and local services.")+'</p>'+
     '<label for="choose-city">'+label("Choose a city")+'</label><div class="toolbar"><select id="choose-city">'+
-    cities.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(city=>'<option value="'+city.id+'">'+esc(city.name)+'</option>').join("")+
+    directoryCities().sort((a,b)=>a.name.localeCompare(b.name)).map(city=>'<option value="'+city.id+'">'+esc(city.name)+'</option>').join("")+
     '</select>'+press("Enter city","enter","","primary")+'</div>'+
     '<form data-form="global-search" class="toolbar"><label class="sr-only" for="atlas-search">'+label("Search")+'</label><input id="atlas-search" name="query" type="search" placeholder="'+label("Search")+'"><button>'+label("Search")+'</button></form>'+
     '</div><div class="atlas-map">'+
@@ -645,7 +673,7 @@ function reservation(record){
     showDialog("Review reservation",'<dl><dt>'+label("Tickets")+'</dt><dd>'+quantity+'</dd><dt>Total</dt><dd>'+
       total.toFixed(2)+' MAD</dd></dl>'+info("Preview data stays in this browser tab.")+
       '<form data-form="dialog"><div class="actions"><button class="primary">'+label("Save preview reservation")+'</button></div></form>',()=>{
-        state.records.push({id:id(),module:"bookings",city:record.city,name:record.name,owner:owner(),
+        state.records.push({id:id(),module:"bookings",city:record.city,name:record.name,owner:owner(),eventId:record.id,
           venue:record.venue,date:record.date,quantity,total,status:"Pending"});
         log("Booking created",record.name);
         save();
@@ -669,7 +697,7 @@ function application(record){
     const {cvId,note}=values(form,schema);
     const cv=available.find(item=>item.id===cvId);
     if(!cv){formStatus(form,"Choose one of your CVs.");return;}
-    state.records.push({id:id(),module:"applications",city:record.city,name:record.name,owner:owner(),
+    state.records.push({id:id(),module:"applications",city:record.city,name:record.name,owner:owner(),jobId:record.id,cvId,
       cv:cv.name,date:today(),note,status:"Received"});
     log("Application submitted",record.name);
     save();
@@ -771,6 +799,9 @@ function renderAccount(){
 }
 function rememberUser(email,name,role){
   state.user={email:normalize(email),name,role};
+  if(!state.records.some(row=>row.module==="users"&&row.email===state.user.email)){
+    state.records.push({id:id(),module:"users",name,email:state.user.email,role,enabled:true});
+  }
   state.guest=false;
   log("Login","Preview session");
   save();
@@ -850,68 +881,116 @@ function table(rows,columns,actions){
 }
 function renderAdmin(){
   const tab=Object.hasOwn(adminSections,view.params.get("tab"))?view.params.get("tab"):"overview";
-  if(!isAdmin()){
-    root.innerHTML=page(tags("Administration")+article("Sign in",info("The administrator preview demonstrates the interface with sample records.")+
-      '<div class="actions">'+link("Sign in",cityPath("account",{tab:"signin",returnTo:cityPath("admin")}),"action")+
-      press("Open administrator preview","admin-preview","","primary")+'</div>'));
-    return;
-  }
-  const menu='<aside class="admin-nav" aria-label="Administration">'+Object.entries(adminSections).map(([id,title])=>
-    '<a href="'+esc(cityPath("admin",{tab:id}))+'"'+(id===tab?' aria-current="page"':'')+'>'+label(title)+'</a>'
-  ).join("")+press("Sign out","sign-out")+'</aside>';
+  const menu='<nav class="admin-nav" aria-label="Administration">'+adminGroups.map(([heading,sections])=>
+    '<section><h2>'+label(heading)+'</h2>'+sections.map(id=>
+      '<a href="'+esc(cityPath("admin",{tab:id}))+'"'+(id===tab?' aria-current="page"':'')+'>'+label(adminSections[id])+'</a>'
+    ).join("")+'</section>'
+  ).join("")+'</nav>';
+  const all=section=>state.records.filter(record=>record.module===section);
   let body;
   if(tab==="overview"){
     const metrics=[
-      ["Users",state.records.filter(record=>record.module==="users").length],
-      ["Bookings",state.records.filter(record=>record.module==="bookings").length],
-      ["Applications",state.records.filter(record=>record.module==="applications").length],
-      ["Directory records",state.records.filter(record=>Object.hasOwn(modules,record.module)||record.module==="news").length]
+      ["Users","users",all("users").length],
+      ["Pending bookings","bookings",all("bookings").filter(row=>row.status==="Pending").length],
+      ["Applications to review","applications",all("applications").filter(row=>row.status==="Received").length],
+      ["Sport events","sports",all("sports").length]
     ];
-    body=article("Dashboard",'<div class="stats">'+metrics.map(([name,count])=>'<div><strong>'+count+'</strong>'+label(name)+'</div>').join("")+
-      '</div><h3>Recent activity</h3>'+table(state.records.filter(record=>record.module==="activity").slice(0,8),["name","source","date","status"]));
+    const overview='<div class="stats">'+metrics.map(([name,section,count])=>
+      '<a href="'+esc(cityPath("admin",{tab:section}))+'"><strong>'+count+'</strong>'+label(name)+'</a>'
+    ).join("")+'</div><h3>Directory by module</h3><div class="actions">'+Object.entries(modules).map(([section,meta])=>
+      link(meta.label+" ("+all(section).length+")",cityPath("admin",{tab:section}),"action")
+    ).join("")+'</div>';
+    body=article("Dashboard",overview)+article("Recent activity",table(all("activity").slice(0,8),adminColumns.activity)+
+      link("Activity log",cityPath("admin",{tab:"activity"}),"action"));
   }else{
     const locked=["bookings","applications","activity"].includes(tab);
-    body=article(adminSections[tab],'<div class="toolbar">'+field(input("admin-query","Search","search"))+
-      (locked?"":press("Add","admin-add",'data-section="'+tab+'"',"primary"))+'</div><div id="admin-table"></div>');
+    const records=all(tab);
+    const states=[...new Set(records.map(row=>row.status).filter(Boolean))];
+    const filter=states.length?field(input("admin-status","Status","select",["All",...states]),"All"):"";
+    body=article(adminSections[tab],'<div class="filters">'+field(input("admin-query","Search","search"))+filter+
+      (locked?"":press("Add","admin-add",'data-section="'+tab+'"',"primary"))+'</div><p id="admin-count" class="results-count" role="status"></p><div id="admin-table"></div>');
   }
-  root.innerHTML=page(tags("Administration")+statusLine()+'<div class="admin-layout">'+menu+'<div>'+body+'</div></div>');
-  if(tab==="overview") return;
+  root.innerHTML=page(tags("Administration","Local preview")+
+    info("Changes are saved in this browser tab. Use sample data.")+statusLine()+
+    '<div class="admin-layout">'+menu+'<div class="admin-content stack">'+body+'</div></div>');
+  if(tab==="overview")return;
   const search=root.querySelector('[name="admin-query"]');
-  const columns=tab==="users"?["name","email","role","enabled"]:
-    tab==="activity"?["name","source","date","status"]:
-    ["bookings","applications"].includes(tab)?["name","owner","date","status"]:
-    tab==="slots"?["name","venue","status"]:["name","category","city"];
+  const status=root.querySelector('[name="admin-status"]');
   const update=()=>{
-    const records=state.records.filter(record=>record.module===tab&&searchMatch(search.value,record));
-    $("admin-table").innerHTML=table(records,columns,record=>{
+    const records=all(tab).filter(record=>searchMatch(search.value,record)&&
+      (!status||status.value==="All"||record.status===status.value));
+    $("admin-count").textContent=records.length+" "+t("Results").toLowerCase();
+    $("admin-table").innerHTML=table(records,adminColumns[tab],record=>{
       const attr='data-id="'+esc(record.id)+'" data-section="'+tab+'"';
       return press("Details","admin-details",attr)+
-        (tab==="activity"?"":press("Edit","admin-edit",attr))+
+        (tab==="activity"?"":press(["bookings","applications"].includes(tab)?"Update status":"Edit","admin-edit",attr))+
         (tab==="users"?press(record.enabled?"Disable":"Enable","admin-toggle",attr):"")+
         (!["activity","bookings","applications"].includes(tab)?press("Delete","admin-delete",attr,"danger"):"");
     });
   };
-  search.oninput=update;update();
+  search.oninput=update;
+  if(status)status.onchange=update;
+  update();
 }
+
 function adminEdit(section,record){
-  if(!isAdmin()) return;
+  if(!inAdmin()||!Object.hasOwn(adminColumns,section)||section==="activity"||(record&&record.module!==section))return;
   const isStatus=["bookings","applications"].includes(section);
-  const schema=isStatus?schemas[section].filter(field=>field.key==="status"):[...schemas[section]];
-  if(!["users","cities"].includes(section)&&!isStatus){
-    schema.unshift(input("city","City","select",cities.map(city=>({value:city.id,label:city.name}))));
+  if(isStatus&&!record)return;
+  const relation=adminRelations[section]?.[0];
+  const deriveFromParent=relation&&section!=="jobs"&&(!record||record[relation.key]);
+  const derivedKeys=section==="sports"?["venue","slot","date","time"]:section==="slots"?["venue"]:["business"];
+  const schema=schemas[section].filter(field=>isStatus?field.key==="status":
+    !deriveFromParent||!derivedKeys.includes(field.key));
+  if(relation){
+    const choices=state.records.filter(row=>row.module===relation.module);
+    schema.unshift(input(relation.key,relation.label,"select",[
+      {value:"",label:"Choose a record"},...choices.map(row=>({
+        value:row.id,label:row.name+" / "+(cityById(row.city)?.name||row.city||"")
+      }))
+    ]));
   }
-  const initial=record || {city:view.city.id,published:true,enabled:true};
-  showDialog(record?"Edit":"Add",simpleForm(schema,initial,"Save",isStatus?["status"]:["name"]),form=>{
-    const updates=values(form,schema);
-    if((updates.latitude!=null&&Math.abs(updates.latitude)>90)||(updates.longitude!=null&&Math.abs(updates.longitude)>180)){
-      formStatus(form,"Enter valid latitude and longitude.");return;
+  if(!["users","cities"].includes(section)&&!isStatus&&!deriveFromParent){
+    schema.unshift(input("city","City","select",directoryCities().map(city=>({value:city.id,label:city.name}))));
+  }
+  if(section==="users")schema.push(input("authorizationLevel","Administrator authorization level","number"));
+  const initial={city:view.city.id,published:true,enabled:true,authorizationLevel:1,...record};
+  const required=isStatus?["status"]:section==="users"?["name","email"]:["name"];
+  if(section==="cities")required.push("country","latitude","longitude");
+  if(section==="sports"&&!record)required.push("capacity","availability","price");
+  if(deriveFromParent)required.push(relation.key);
+  showDialog(isStatus?"Update status":record?"Edit":"Add",simpleForm(schema,initial,"Save",required),form=>{
+    const updates=fillRelatedFields(state.records,section,values(form,schema));
+    const error=validateAdminRecord(state.records,section,record,updates);
+    if(error){formStatus(form,error);return;}
+    if(section==="bookings"){
+      const statusError=updateBookingStatus(state.records,record,updates.status);
+      if(statusError){formStatus(form,statusError);return;}
+    }else if(record){
+      const oldEmail=record.email;
+      if(section==="users")updates.email=normalize(updates.email);
+      Object.assign(record,updates);
+      if(section==="users"&&oldEmail&&oldEmail!==record.email){
+        for(const row of [...state.records,...state.cvs,...state.favourites]){
+          if(row.owner===oldEmail)row.owner=record.email;
+        }
+        if(state.profiles[oldEmail]){
+          state.profiles[record.email]={...state.profiles[oldEmail],email:record.email};
+          delete state.profiles[oldEmail];
+        }
+        if(owner()===oldEmail)state.user.email=record.email;
+      }
+    }else{
+      const recordId=id();
+      if(section==="users")updates.email=normalize(updates.email);
+      state.records.push({id:recordId,module:section,city:section==="cities"?recordId:view.city.id,...updates});
     }
-    if(record) Object.assign(record,updates);
-    else state.records.push({id:id(),module:section,city:view.city.id,...updates});
-    log(record?"Record updated":"Record created",updates.name||record.name);
+    refreshRelatedRecords(state.records);
+    adminLog(isStatus?"Status updated":record?"Record updated":"Record created",
+      (updates.name||record.name)+(isStatus?" · "+updates.status:""));
     save();
     dialog.close();
-    notification("Preview change saved.");
+    notification("Local change saved.");
   });
 }
 function renderLegal(kind){
@@ -922,6 +1001,15 @@ function renderLegal(kind){
     '<div class="actions">'+press("Clear preview data","clear-preview","","danger")+'</div>':
     '<p>Use sample information when exploring the atlas. Listings and reservation or application screens demonstrate the guide’s interface.</p>'+
     '<p>Confirm opening hours, service availability and event information with the relevant provider before making plans.</p>'));
+}
+
+function downloadCv(cv){
+  const file=cvFiles.get(cv.id);
+  if(!file)return;
+  const url=URL.createObjectURL(file);
+  const download=document.createElement("a");
+  download.href=url;download.download=file.name;download.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
 
 const actionHandlers={
@@ -938,7 +1026,6 @@ const actionHandlers={
   apply:button=>chooseAction("apply",getRecord(button.dataset.id)),
   enquiry:button=>chooseAction("enquiry",getRecord(button.dataset.id)),
   "sample-user":()=>rememberUser("traveller@example.test","Sample registered user","Registered user"),
-  "admin-preview":()=>rememberUser("admin@example.test","Sample administrator","Administrator"),
   "sign-out":()=>{
     log("Logout");state.user=null;state.guest=false;pending=undefined;save();navigate(path("home"));
   },
@@ -950,10 +1037,7 @@ const actionHandlers={
       showDialog("Open file",'<p>The file is no longer in memory. Open Edit to choose it again.</p>');
       return;
     }
-    const url=URL.createObjectURL(file);
-    const download=document.createElement("a");
-    download.href=url;download.download=file.name;download.click();
-    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    downloadCv(cv);
   },
   "delete-cv":button=>{
     const cv=state.cvs.find(item=>item.id===button.dataset.id&&item.owner===owner());
@@ -970,27 +1054,50 @@ const actionHandlers={
     const record=byId(button.dataset.id);
     if(record?.owner!==owner()||record.module!=="bookings")return;
     showDialog("Cancel reservation?",'<p>'+esc(record.name)+'</p><form data-form="dialog"><button class="danger">Cancel reservation</button></form>',()=>{
-      record.status="Cancelled";log("Booking cancelled",record.name);save();dialog.close();notification("Preview reservation cancelled.");
+      updateBookingStatus(state.records,record,"Cancelled");log("Booking cancelled",record.name);save();dialog.close();notification("Preview reservation cancelled.");
     });
   },
   "admin-add":button=>adminEdit(button.dataset.section),
   "admin-edit":button=>adminEdit(button.dataset.section,byId(button.dataset.id)),
   "admin-details":button=>{
-    if(!isAdmin())return;
+    if(!inAdmin())return;
     const record=byId(button.dataset.id);
-    if(record)showDialog(record.name,details(record));
+    if(record){
+      const cv=record.module==="applications"&&state.cvs.find(item=>
+        item.owner===record.owner&&(record.cvId?item.id===record.cvId:item.name===record.cv)
+      );
+      const file=cv&&cvFiles.get(cv.id);
+      showDialog(record.name,details(record)+(cv?'<h3>Attached CV</h3>'+details(cv,schemas.cv)+
+        (file?press("Open file","open-admin-cv",'data-id="'+esc(record.id)+'"'):'<p>CV file is unavailable in this tab.</p>'):""));
+    }
+  },
+  "open-admin-cv":button=>{
+    if(!inAdmin())return;
+    const record=byId(button.dataset.id);
+    if(record?.module!=="applications")return;
+    const cv=state.cvs.find(item=>item.owner===record.owner&&item.id===record.cvId);
+    if(cv)downloadCv(cv);
   },
   "admin-toggle":button=>{
     const record=byId(button.dataset.id);
-    if(!isAdmin()||record?.module!=="users")return;
-    record.enabled=!record.enabled;log(record.enabled?"User enabled":"User disabled",record.name);save();render();
+    if(!inAdmin()||record?.module!=="users")return;
+    record.enabled=!record.enabled;adminLog(record.enabled?"User enabled":"User disabled",record.name);save();notification("Local change saved.");
   },
   "admin-delete":button=>{
     const record=byId(button.dataset.id);
-    if(!isAdmin()||!record)return;
+    if(!inAdmin()||!record)return;
+    const dependency=dependentRecord(state.records,record);
+    if(dependency){
+      showDialog("Record is in use",'<p>'+esc(dependency.name)+' still links to this record.</p>');
+      return;
+    }
+    if(record.module==="cities"&&directoryCities().length<2){
+      showDialog("Keep one city",'<p>The atlas needs a city to open.</p>');
+      return;
+    }
     confirmDialog("Delete record?",record.name,()=>{
       state.records=state.records.filter(item=>item.id!==record.id);
-      log("Record deleted",record.name);save();notification("Preview record removed.");
+      adminLog("Record deleted",record.name);save();notification("Local record removed.");
     });
   },
   "clear-preview":()=>confirmDialog("Clear local preview data?","Account previews, CV metadata and sample changes will be cleared.",()=>{
