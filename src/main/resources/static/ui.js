@@ -1,3 +1,4 @@
+import {readLanguage} from "./cookie-banner.js";
 const dictionary = {
   "Atlas of Morocco":["Atlas du Maroc","أطلس المغرب"],"Home":["Accueil","الرئيسية"],
   "City walk":["Carte de la ville","جولة المدينة"],"Tourism":["Tourisme","السياحة"],
@@ -64,7 +65,7 @@ const dictionary = {
 };
 export const $ = id => document.getElementById(id);
 export const normalize = value => String(value ?? "").normalize("NFD").replace(/\p{Diacritic}/gu,"").trim().toLowerCase();
-export const lang = () => localStorage.getItem("atlas-language") || "en";
+export const lang = readLanguage;
 export const t = key => dictionary[key]?.[lang()==="fr" ? 0 : lang()==="ar" ? 1 : -1] || key;
 export const esc = value => String(value ?? "").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 export const field = (descriptor,value="",required=false) => {

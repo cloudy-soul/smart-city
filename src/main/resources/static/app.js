@@ -1,3 +1,4 @@
+import {cookieLabel,rememberLanguage,updateCookieBanner} from "./cookie-banner.js";
 import {liveCategories,loadCasablancaPlaces,loadViewportPlaces} from "./live-places.js";
 import {cities} from "./assets/cities.js";
 import {regions} from "./assets/borders.js";
@@ -77,7 +78,7 @@ function log(name,description="",status="Preview"){
   state.records.unshift({id:id(),module:"activity",name,description,status,source:owner()||"Guest",date:new Date().toISOString()});
 }
 function change(language){
-  localStorage.setItem("atlas-language",language);
+  rememberLanguage(language);
   document.documentElement.lang=language;
   document.documentElement.dir=language==="ar"?"rtl":"ltr";
   render();
@@ -98,7 +99,14 @@ function renderChrome(){
   $("language").onchange=event=>change(event.target.value);
   $("footer").innerHTML='<span>'+label("Atlas of Morocco")+'</span><nav>'+
     link("Terms of Service",path("terms"))+link("Privacy Policy",path("privacy"))+'</nav>';
+  const preferences=document.createElement("button");
+  preferences.type="button";
+  preferences.className="cookie-settings";
+  preferences.textContent=cookieLabel(lang());
+  preferences.onclick=()=>updateCookieBanner(lang(),preferences);
+  $("footer").querySelector("nav").append(preferences);
   $("dialog-close").textContent=t("Close");
+  updateCookieBanner(lang());
 }
 
 function render(focus=false){
@@ -909,7 +917,7 @@ function adminEdit(section,record){
 function renderLegal(kind){
   const privacy=kind==="privacy";
   root.innerHTML=page(tags(privacy?"Privacy Policy":"Terms of Service")+article(privacy?"Privacy Policy":"Terms of Service",privacy?
-    '<p>This frontend preview stores sample profiles and activity in the current browser tab. It stores the selected language in this browser.</p>'+
+    '<p>This frontend preview stores sample profiles and activity in the current browser tab. Your cookie preference is saved in this browser. Language stays in the current session unless you choose to remember it for future visits.</p>'+
     '<p>CV file contents are kept in memory while this page is open. Password fields are used for form demonstration. Street tiles are provided by OpenStreetMap.</p>'+
     '<div class="actions">'+press("Clear preview data","clear-preview","","danger")+'</div>':
     '<p>Use sample information when exploring the atlas. Listings and reservation or application screens demonstrate the guide’s interface.</p>'+
