@@ -1,9 +1,17 @@
-const consentKey="atlas-cookie-choice";
+const consentKey="atlas-consent";
 const languageKey="atlas-language";
+try{
+  localStorage.removeItem("atlas-cookie-choice");
+  localStorage.removeItem(languageKey);
+}catch{}
+const options=["language","analytics","personalization"];
 const copy={
-  en:["Cookie preferences","This site uses browser storage for your session. You can also save your language for future visits.","Only essentials","Remember language","Privacy Policy"],
-  fr:["Préférences de cookies","Le site utilise le stockage du navigateur pour votre session. Vous pouvez aussi mémoriser votre langue pour vos prochaines visites.","L’essentiel seulement","Mémoriser la langue","Confidentialité"],
-  ar:["تفضيلات ملفات تعريف الارتباط","يستخدم الموقع مساحة تخزين المتصفح لحفظ جلستك. يمكنك أيضًا حفظ لغتك للزيارات المقبلة.","الأساسية فقط","تذكّر اللغة","سياسة الخصوصية"]
+  en:["Cookie preferences","Choose which optional cookies Atlas can use.","Essential only","Accept all","Customize","Privacy Policy",
+    "Language","Analytics","Personalization","Save choices","Essential cookies remember your choices and are always on."],
+  fr:["Préférences de cookies","Choisissez les cookies facultatifs qu’Atlas peut utiliser.","L’essentiel seulement","Tout accepter","Personnaliser","Confidentialité",
+    "Langue","Statistiques","Personnalisation","Enregistrer","Les cookies essentiels enregistrent vos choix et restent actifs."],
+  ar:["تفضيلات ملفات تعريف الارتباط","اختر ملفات تعريف الارتباط الاختيارية التي يمكن للأطلس استخدامها.","الأساسية فقط","قبول الكل","تخصيص","سياسة الخصوصية",
+    "اللغة","التحليلات","التخصيص","حفظ الخيارات","تحفظ ملفات تعريف الارتباط الأساسية اختياراتك وتظل مفعّلة."]
 };
 const motions=matchMedia("(prefers-reduced-motion: reduce)");
 let banner;
@@ -11,19 +19,34 @@ let frame;
 let origin;
 let opener;
 
-function get(storage,key){
-  try{return storage.getItem(key);}catch{return null;}
+export function readCookie(name){
+  const value=document.cookie.split(";").map(entry=>entry.trim()).find(entry=>entry.startsWith(name+"="));
+  try{return value?decodeURIComponent(value.slice(name.length+1)):null;}
+  catch{return null;}
 }
-function put(storage,key,value){
-  try{if(value==null)storage.removeItem(key);else storage.setItem(key,value);}catch{}
+export function writeCookie(name,value){
+  const secure=location.protocol==="https:"?"; Secure":"";
+  document.cookie=name+"="+encodeURIComponent(value??"")+"; Max-Age="+(value==null?0:15552000)+"; Path=/; SameSite=Lax"+secure;
+}
+export function preferences(){
+  const value=readCookie(consentKey);
+  return /^v1[.][01]{3}$/.test(value||"")?Object.fromEntries(options.map((key,i)=>[key,value[i+3]==="1"])):null;
 }
 export function readLanguage(){
-  return (get(localStorage,consentKey)==="language"&&get(localStorage,languageKey))||
-    get(sessionStorage,languageKey)||get(localStorage,languageKey)||"en";
+  const cookie=preferences()?.language?readCookie(languageKey):null;
+  let tab;
+  try{tab=sessionStorage.getItem(languageKey);}catch{}
+  return [tab,cookie].find(value=>["en","fr","ar"].includes(value))||"en";
 }
 export function rememberLanguage(language){
-  put(sessionStorage,languageKey,language);
-  put(localStorage,languageKey,get(localStorage,consentKey)==="language"?language:null);
+  try{sessionStorage.setItem(languageKey,language);}catch{}
+  if(preferences()?.language)writeCookie(languageKey,language);
+}
+export function rememberedChoice(name){
+  return preferences()?.personalization?readCookie("atlas-"+name):null;
+}
+export function rememberChoice(name,value){
+  if(preferences()?.personalization)writeCookie("atlas-"+name,value);
 }
 export function cookieLabel(language){return (copy[language]||copy.en)[0];}
 
@@ -99,7 +122,7 @@ function draw(now=0){
   const width=Math.max(136,Math.floor((canvas.clientWidth||360)/2));
   if(canvas.width!==width)canvas.width=width;
   if(origin===undefined)origin=now;
-  const seconds=(now-origin)/1000;
+  const seconds=Math.max(0,now-origin)/1000;
   const run=2.6, turn=1.05, half=run+turn;
   const leg=Math.floor(seconds/half);
   const direction=leg%2?-1:1;
@@ -146,17 +169,41 @@ function makeBanner(){
   node.hidden=true;
   node.innerHTML='<div class="cookie-copy"><h2 id="cookie-heading"></h2><p id="cookie-description"></p>'+
     '<div class="cookie-actions"><button type="button" data-choice="essential"></button>'+
-    '<button type="button" data-choice="language"></button><a href="privacy.html"></a></div></div>'+
+    '<button type="button" data-choice="all"></button><button type="button" data-choice="custom" aria-expanded="false" aria-controls="cookie-options"></button>'+
+    '<a href="privacy.html"></a></div>'+
+    '<form id="cookie-options" hidden><p></p>'+options.map(key=>
+      '<label><input type="checkbox" name="'+key+'"><span></span></label>').join("")+
+    '<button type="submit"></button></form></div>'+
     '<div class="cookie-track" aria-hidden="true"><canvas width="180" height="54"></canvas></div>';
-  node.querySelectorAll("button[data-choice]").forEach(button=>button.onclick=()=>{
-    const language=document.documentElement.lang||readLanguage();
-    put(localStorage,consentKey,button.dataset.choice);
-    rememberLanguage(language);
+  const form=node.querySelector("form");
+  const custom=node.querySelector('[data-choice="custom"]');
+  const save=enabled=>{
+    const language=readLanguage();
+    const value="v1."+options.map(key=>enabled(key)?"1":"0").join("");
+    writeCookie(consentKey,value);
+    if(enabled("language"))writeCookie(languageKey,language);
+    else writeCookie(languageKey,null);
+    if(!enabled("personalization")){
+      writeCookie("atlas-city",null);
+      writeCookie("atlas-category",null);
+    }
     node.hidden=true;
     stop();
     opener?.focus();
     opener=undefined;
-  });
+    document.dispatchEvent(new Event("atlas-consent-change"));
+  };
+  node.querySelector('[data-choice="essential"]').onclick=()=>save(()=>false);
+  node.querySelector('[data-choice="all"]').onclick=()=>save(()=>true);
+  custom.onclick=()=>{
+    form.hidden=!form.hidden;
+    custom.setAttribute("aria-expanded",String(!form.hidden));
+    if(!form.hidden)form.elements.language.focus();
+  };
+  form.onsubmit=event=>{
+    event.preventDefault();
+    save(key=>form.elements[key].checked);
+  };
   document.body.append(node);
   if(window.ResizeObserver) {
     new ResizeObserver(()=>{
@@ -168,18 +215,29 @@ function makeBanner(){
 
 export function updateCookieBanner(language,trigger){
   if(!banner)banner=makeBanner();
-  const [title,description,essential,optional,privacy]=copy[language]||copy.en;
+  const [title,description,essential,all,custom,privacy,languageLabel,analytics,personalization,save,essentialHelp]=copy[language]||copy.en;
   banner.querySelector("h2").textContent=title;
   banner.querySelector("p").textContent=description;
-  banner.querySelector('[data-choice="essential"]').textContent=essential;
-  banner.querySelector('[data-choice="language"]').textContent=optional;
+  for(const [key,text] of Object.entries({essential,all,custom})){
+    banner.querySelector('[data-choice="'+key+'"]').textContent=text;
+  }
   banner.querySelector("a").textContent=privacy;
-  if(trigger||!get(localStorage,consentKey)){
+  const form=banner.querySelector("form");
+  form.querySelector("p").textContent=essentialHelp;
+  form.querySelector("button").textContent=save;
+  [languageLabel,analytics,personalization].forEach((text,i)=>form.querySelectorAll("label span")[i].textContent=text);
+  const saved=preferences();
+  if(trigger||!saved){
     const wasHidden=banner.hidden;
     banner.hidden=false;
+    if(wasHidden||trigger){
+      options.forEach(key=>{form.elements[key].checked=saved?.[key]||false;});
+      form.hidden=!trigger;
+      banner.querySelector('[data-choice="custom"]').setAttribute("aria-expanded",String(!form.hidden));
+    }
     if(trigger){
       opener=trigger;
-      banner.querySelector("button").focus();
+      banner.querySelector('[data-choice="essential"]').focus();
     }
     if(wasHidden||frame==null){stop();draw(performance.now());}
   }

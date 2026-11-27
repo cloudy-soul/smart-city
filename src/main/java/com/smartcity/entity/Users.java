@@ -43,7 +43,7 @@ public class Users extends BaseEntity {
     private String address;
     @Column(nullable = false)
     private String nationality;
-    @Column(nullable = false)
+    @Column
     private LocalDate birthday;
     @NotNull
     @Column(nullable = false)
@@ -62,11 +62,9 @@ public class Users extends BaseEntity {
     @ManyToOne
     @JoinColumn(name = "online_session_id")
     private OnlineSession onlineSession;
-    @OneToMany
-    @JoinColumn(name = "users_id")
+    @OneToMany(mappedBy = "user")
     private List<Booking> bookings = new ArrayList<>();
-    @OneToMany
-    @JoinColumn(name = "users_id")
+    @OneToMany(mappedBy = "user")
     private List<JobApplication> jobApplications = new ArrayList<>();
     @ManyToOne
     @JoinColumn(name = "tourists_id")
@@ -200,6 +198,28 @@ public class Users extends BaseEntity {
         this.userCode = userCode;
     }
 
+    @Column(nullable = false)
+    private boolean studentActive = true;
+
+    @Column(nullable = false)
+    private int credentialVersion;
+
+    public boolean isActiveStudent() {
+        return students != null && studentActive;
+    }
+
+    public void setStudentActive(boolean active) {
+        this.studentActive = active;
+    }
+
+    public int getCredentialVersion() {
+        return credentialVersion;
+    }
+
+    public void invalidateCredentials() {
+        credentialVersion++;
+    }
+
     public Students getStudents() {
         return students;
     }
@@ -231,11 +251,14 @@ public class Users extends BaseEntity {
     public void addBooking(Booking item) {
         if (item != null && !bookings.contains(item)) {
             bookings.add(item);
+            item.setUser(this);
         }
     }
 
     public void removeBooking(Booking item) {
-        bookings.remove(item);
+        if (bookings.remove(item)) {
+            item.setUser(null);
+        }
     }
 
     public List<JobApplication> getJobApplications() {
@@ -245,11 +268,14 @@ public class Users extends BaseEntity {
     public void addJobApplication(JobApplication item) {
         if (item != null && !jobApplications.contains(item)) {
             jobApplications.add(item);
+            item.setUser(this);
         }
     }
 
     public void removeJobApplication(JobApplication item) {
-        jobApplications.remove(item);
+        if (jobApplications.remove(item)) {
+            item.setUser(null);
+        }
     }
 
     public Tourists getTourists() {

@@ -6,6 +6,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
+import java.time.LocalDate;
 
 /**
  * Job - generated from the UML diagram by diagram2app.
@@ -27,6 +28,16 @@ public class Job extends BaseEntity {
     @ManyToOne
     @JoinColumn(name = "company_id")
     private Company company;
+
+    private LocalDate applicationDeadline;
+
+    @Column(nullable = false, length = 2000)
+    private String requirements = "";
+
+    public LocalDate getApplicationDeadline() { return applicationDeadline; }
+    public void setApplicationDeadline(LocalDate applicationDeadline) { this.applicationDeadline = applicationDeadline; }
+    public String getRequirements() { return requirements; }
+    public void setRequirements(String requirements) { this.requirements = requirements; }
 
     protected Job() {
     }

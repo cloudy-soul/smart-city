@@ -17,5 +17,7 @@ public record CompanyDto(
         @NotBlank String phone,
         @NotBlank String email,
         @NotNull String tax,
-        @NotNull String domainName) {
+        @NotNull String domainName,
+        Double latitude,
+        Double longitude) {
 }

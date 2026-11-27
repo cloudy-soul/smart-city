@@ -1,35 +1,22 @@
 # Atlas of Morocco frontend
 
-Start the existing Spring Boot project and open its root URL. Spring Boot serves the frontend from `src/main/resources/static`. For a frontend-only preview, run `python3 -m http.server 4173 --directory src/main/resources/static` from the project root and open `http://localhost:4173/`. Street tiles need internet access. Country geometry and landmark illustrations are bundled.
+Follow [the PostgreSQL setup](README.md#run-locally) and open the Spring Boot URL. Directory entries come from PostgreSQL. OpenStreetMap places and tiles remain live and read-only. The landing map also uses a bundled geographic snapshot with attribution.
 
-## Screens and preview flows
-
-| Entry point | Screens |
+| Entry point | Connected flow |
 | --- | --- |
-| `index.html` and `city.html` | 25 destinations, regional and municipal borders, pixel-art landmark previews, arrival transition and flat street walk |
-| `tourism.html` | Attractions, accommodation, food, ATMs, culture, transport, healthcare, emergency information, shopping, rental and air travel |
-| `education.html` | Universities, colleges, libraries, coaching and training centres |
-| `sports.html` | Event and venue details, ticket quantity, reservation review and booking history |
-| `jobs.html` | Employer, requirements, deadline, CV selection, cover note and application history |
-| `business.html` | Companies, centres, industries, opportunities, news, announcements and enquiry form |
-| `account.html` | Sign-in, registration, reset, profile, CV add/edit/delete/file opening, favourites, bookings, applications and sign-out |
-| `admin.html` | Direct local dashboard, users/roles, cities, listings, venues and time slots, news, enquiry forwarding, statuses and activity log |
-| `search.html`, `terms.html`, `privacy.html` | City-wide search and map filters, Terms of Service and Privacy Policy |
+| Tourism and Education | Search and filter real directory entries or explore live OpenStreetMap results |
+| Sport events | View scheduled events, reserve available tickets, and cancel from **My bookings** |
+| Jobs | View posted requirements and deadlines, and apply using an uploaded CV |
+| Business | View companies and their published announcements |
+| Account | Register or sign in, manage CVs, and see your favourites, reservations, and applications |
+| Administration | Manage catalogue entries and venue slots, review applications, publish news, and view audit history and aggregate analytics |
 
-Module pages have list, filters and map views. Map views add live named places from OpenStreetMap vector tiles via OpenFreeMap. The Places in view panel refreshes when the map stops moving, follows the active filters and includes only locations in the current map area. Live place records are held in memory for that view. Searches in Casablanca’s list view also look across the full Casablanca commune, including beyond the visible map. Named OpenStreetMap results are filtered by category or search phrase and held in memory while the search page is open. The map uses OpenStreetMap tiles and the opening borders use Morocco Communes data from OpenStreetMap. See the attribution on each map. Boundary source snapshot: https://github.com/zkousama/morocco-communes/tree/4ec363333fea43e712820e20f59532bac5df0b07/data/v1/geometry (ODbL).
+Record lists offer 15 or 30 rows per page. Search and filters apply before pagination. The page-size selection is remembered for each list in the current tab.
 
-The language switch covers the main navigation and common controls in English, French and Arabic, including RTL in Arabic. Sample content and some explanatory copy are in English.
+A PostgreSQL-backed account is required for personal workflows. Select **Student account** during registration if you want to manage CVs and apply. An application keeps its original PDF. See the setup guide for granting Admin access to a registered account.
 
-## Frontend integration
+Open **Account → Profile** to edit your contact details, turn student status on or off, or change your password. Changing your email or password requires your current password and signs out other sessions. Turning off student status keeps your CVs and applications and pauses CV access and new applications until you turn it back on.
 
-The frontend uses browser preview state. Use **Start sample user session** to inspect personal flows and open **Administration** from the header to inspect admin flows. Forms demonstrate validation and state changes. They send no authentication requests, email, payment, bookings, applications, or admin writes. The reservation review leads to a preview booking. CV contents are kept in memory; only metadata is kept in tab storage. Use the Privacy Policy’s **Clear preview data** control to reset the demo.
+On a first visit, choose **Essential only**, **Accept all**, or **Customize**. The footer reopens **Cookie preferences**. Language can be set for the current tab. The optional language and personalization cookies remember your chosen language, city, and category between visits.
 
-The original Java, Spring configuration and tests are preserved. `data.js` defines record shapes and sample data. `app.js` contains the route, session, form and map handlers. Replace preview handlers with authenticated calls when the backend rules are ready.
-
-Set the DB_PASSWORD environment variable to your PostgreSQL password before starting Spring Boot. The frontend-only preview does not need a database.
-
-### Local administration
-
-Open **Administration** directly. The portal shares the preview records with the directory and personal pages. Changes remain in browser tab storage across reloads. The portal does not start an account session.
-
-Create a venue, then create an available time slot for it and select the slot when creating an event. Business news and forwarding records link to a business. Booking confirmations and cancellations update available tickets. Applications show their linked CV when its sample file is available in memory. The activity log records local edits and status changes.
+**Administration → Analytics** shows aggregate counts from opted-in visits when collection is enabled. The dashboard starts empty. Use its inclusive UTC date range to filter totals and breakdowns. The collector records no visitor identifiers or geolocation, so the location group is unknown for these visits.

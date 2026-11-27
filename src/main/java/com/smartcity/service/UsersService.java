@@ -17,7 +17,6 @@ import com.smartcity.repository.StudentsRepository;
 import com.smartcity.repository.TouristsRepository;
 import com.smartcity.repository.UsersRepository;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,8 +119,17 @@ public class UsersService {
         e.setStudents(dto.studentsId() == null ? null : findStudents(dto.studentsId()));
         e.setAdmin(dto.adminId() == null ? null : findAdmin(dto.adminId()));
         e.setOnlineSession(dto.onlineSessionId() == null ? null : findOnlineSession(dto.onlineSessionId()));
-        if (dto.bookingsIds() != null) { new ArrayList<>(e.getBookings()).forEach(e::removeBooking); dto.bookingsIds().forEach(i -> e.addBooking(findBooking(i))); }
-        if (dto.jobApplicationsIds() != null) { new ArrayList<>(e.getJobApplications()).forEach(e::removeJobApplication); dto.jobApplicationsIds().forEach(i -> e.addJobApplication(findJobApplication(i))); }
+        if (dto.bookingsIds() != null) {
+            e.getBookings().stream().filter(booking -> booking.getEvent() == null).toList().forEach(e::removeBooking);
+            dto.bookingsIds().stream().map(this::findBooking)
+                    .filter(booking -> booking.getEvent() == null).forEach(e::addBooking);
+        }
+        if (dto.jobApplicationsIds() != null) {
+            e.getJobApplications().stream().filter(application -> !application.isSampleSubmission())
+                    .toList().forEach(e::removeJobApplication);
+            dto.jobApplicationsIds().stream().map(this::findJobApplication)
+                    .filter(application -> !application.isSampleSubmission()).forEach(e::addJobApplication);
+        }
         e.setTourists(dto.touristsId() == null ? null : findTourists(dto.touristsId()));
     }
 

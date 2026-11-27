@@ -66,6 +66,12 @@ public class CompanyService {
         if (includeConstructorFields) { e.setEmail(dto.email()); }
         if (includeConstructorFields) { e.setTax(dto.tax()); }
         if (includeConstructorFields) { e.setDomainName(dto.domainName()); }
+        if ((dto.latitude() == null) != (dto.longitude() == null)
+                || (dto.latitude() != null && !(Math.abs(dto.latitude()) <= 90 && Math.abs(dto.longitude()) <= 180))) {
+            throw new IllegalArgumentException("Provide both coordinates within latitude ±90 and longitude ±180.");
+        }
+        e.setLatitude(dto.latitude());
+        e.setLongitude(dto.longitude());
     }
 
     private CompanyDto toDto(Company e) {
@@ -80,6 +86,6 @@ public class CompanyService {
                 e.getPhone(),
                 e.getEmail(),
                 e.getTax(),
-                e.getDomainName());
+                e.getDomainName(), e.getLatitude(), e.getLongitude());
     }
 }

@@ -39,7 +39,7 @@ public class JobService {
     }
 
     public JobDto update(Long id, JobDto dto) {
-        Job e = load(id);
+        Job e = repository.lockById(id).orElseThrow(() -> new NotFoundException("Job not found."));
         apply(e, dto, true);
         return toDto(repository.save(e));
     }
@@ -68,6 +68,8 @@ public class JobService {
         if (includeConstructorFields) { e.setIndustry(dto.industry()); }
         if (includeConstructorFields) { e.setEmploymentType(dto.employmentType()); }
         if (includeConstructorFields) { e.setSalary(dto.salary()); }
+        e.setApplicationDeadline(dto.applicationDeadline());
+        e.setRequirements(dto.requirements() == null ? "" : dto.requirements());
         e.setCompany(dto.companyId() == null ? null : findCompany(dto.companyId()));
     }
 
@@ -78,6 +80,7 @@ public class JobService {
                 e.getIndustry(),
                 e.getEmploymentType(),
                 e.getSalary(),
-                e.getCompany() == null ? null : e.getCompany().getId());
+                e.getCompany() == null ? null : e.getCompany().getId(),
+                e.getApplicationDeadline(), e.getRequirements());
     }
 }

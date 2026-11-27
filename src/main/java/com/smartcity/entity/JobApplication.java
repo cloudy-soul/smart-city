@@ -4,6 +4,7 @@ import com.smartcity.enums.ApplicationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -23,12 +24,34 @@ public class JobApplication extends BaseEntity {
     @Column(nullable = false)
     private ApplicationStatus status = ApplicationStatus.PENDING;
 
-        @ManyToOne
+    @ManyToOne
     @JoinColumn(name = "job_id")
     private Job job;
     @ManyToOne
     @JoinColumn(name = "c_v_id")
     private CV cV;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "users_id")
+    private Users user;
+
+    @Column(nullable = false, length = 2000)
+    private String coverNote = "";
+
+    @Column(nullable = false)
+    private boolean sampleSubmission;
+
+    public Users getUser() { return user; }
+    public void setUser(Users user) { this.user = user; }
+    public String getCoverNote() { return coverNote; }
+    public boolean isSampleSubmission() { return sampleSubmission; }
+
+    public void submit(Users user, String coverNote) {
+        this.user = user;
+        this.coverNote = coverNote;
+        this.sampleSubmission = true;
+        submitApplication();
+    }
 
     protected JobApplication() {
     }
@@ -71,13 +94,11 @@ public class JobApplication extends BaseEntity {
     }
 
     public void submitApplication() {
-        // TODO(diagram2app): the behaviour of JobApplication.submitApplication() is not specified in the diagram.
-        throw new UnsupportedOperationException("JobApplication.submitApplication() is not implemented: behaviour not specified");
+        status = ApplicationStatus.PENDING;
     }
 
     public void updateStatus(ApplicationStatus status) {
-        // TODO(diagram2app): the behaviour of JobApplication.updateStatus() is not specified in the diagram.
-        throw new UnsupportedOperationException("JobApplication.updateStatus() is not implemented: behaviour not specified");
+        this.status = status;
     }
 
     @Override

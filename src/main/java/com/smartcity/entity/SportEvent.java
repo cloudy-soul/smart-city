@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.OneToOne;
 import jakarta.validation.constraints.NotBlank;
 import java.time.LocalDateTime;
 
@@ -32,6 +33,26 @@ public class SportEvent {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @OneToOne
+    @JoinColumn(name = "slot_id", unique = true)
+    private VenueSlot slot;
+
+    @Column(nullable = false)
+    private int ticketCapacity;
+
+    @Column(nullable = false)
+    private int reservedTickets;
+
+    public VenueSlot getSlot() { return slot; }
+    public int getTicketCapacity() { return ticketCapacity; }
+    public int getReservedTickets() { return reservedTickets; }
+    public int availableTickets() { return ticketCapacity - reservedTickets; }
+
+    public void setSlot(VenueSlot slot) { this.slot = slot; }
+    public void setTicketCapacity(int ticketCapacity) { this.ticketCapacity = ticketCapacity; }
+    public void reserveTickets(int quantity) { reservedTickets += quantity; }
+    public void releaseTickets(int quantity) { reservedTickets -= quantity; }
 
     protected SportEvent() {
     }

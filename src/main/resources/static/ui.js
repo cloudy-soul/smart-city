@@ -1,6 +1,7 @@
 import {readLanguage} from "./cookie-banner.js";
 const dictionary = {
   "Atlas of Morocco":["Atlas du Maroc","أطلس المغرب"],"Home":["Accueil","الرئيسية"],
+  "Search all city modules":["Rechercher dans tous les modules","البحث في جميع أقسام المدينة"],
   "City walk":["Carte de la ville","جولة المدينة"],"Tourism":["Tourisme","السياحة"],
   "Education":["Études","التعليم"],"Sport events":["Événements sportifs","الفعاليات الرياضية"],
   "Jobs":["Emploi","الوظائف"],"Business":["Entreprises","الأعمال"],
@@ -21,6 +22,8 @@ const dictionary = {
   "Cancel":["Annuler","إلغاء"],"Details":["Détails","التفاصيل"],"Name":["Nom","الاسم"],
   "Email":["Adresse e-mail","البريد الإلكتروني"],"Password":["Mot de passe","كلمة المرور"],
   "Confirm password":["Confirmer le mot de passe","تأكيد كلمة المرور"],
+  "Per page":["Par page","لكل صفحة"],"Previous":["Précédent","السابق"],"Next":["Suivant","التالي"],
+  "Page":["Page","الصفحة"],"Loading…":["Chargement…","جارٍ التحميل…"],
   "Full name":["Nom complet","الاسم الكامل"],"Phone":["Téléphone","الهاتف"],"Country":["Pays","الدولة"],
   "Category":["Catégorie","الفئة"],"Area":["Quartier","المنطقة"],"Description":["Description","الوصف"],
   "Address":["Adresse","العنوان"],"Latitude":["Latitude","خط العرض"],"Longitude":["Longitude","خط الطول"],

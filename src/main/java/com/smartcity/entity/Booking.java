@@ -4,11 +4,13 @@ import com.smartcity.enums.BookingStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 /**
  * Booking - generated from the UML diagram by diagram2app.
@@ -26,6 +28,35 @@ public class Booking extends BaseEntity {
     @ManyToOne
     @JoinColumn(name = "venue_id")
     private Venue venue;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "event_id")
+    private SportEvent event;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "users_id")
+    private Users user;
+
+    @Column(nullable = false)
+    private int quantity = 1;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal unitPrice = BigDecimal.ZERO;
+
+    public SportEvent getEvent() { return event; }
+    public Users getUser() { return user; }
+    public int getQuantity() { return quantity; }
+    public BigDecimal getUnitPrice() { return unitPrice; }
+    public void setUser(Users user) { this.user = user; }
+
+    public void reserve(SportEvent event, Users user, int quantity, BigDecimal unitPrice) {
+        this.event = event;
+        this.venue = event.getVenue();
+        this.user = user;
+        this.quantity = quantity;
+        this.unitPrice = unitPrice;
+        this.status = BookingStatus.CONFIRMED;
+    }
 
     protected Booking() {
     }
@@ -60,13 +91,13 @@ public class Booking extends BaseEntity {
     }
 
     public void confirmBooking() {
-        // TODO(diagram2app): the behaviour of Booking.confirmBooking() is not specified in the diagram.
-        throw new UnsupportedOperationException("Booking.confirmBooking() is not implemented: behaviour not specified");
+        if (status == BookingStatus.PENDING) {
+            status = BookingStatus.CONFIRMED;
+        }
     }
 
     public void cancelBooking() {
-        // TODO(diagram2app): the behaviour of Booking.cancelBooking() is not specified in the diagram.
-        throw new UnsupportedOperationException("Booking.cancelBooking() is not implemented: behaviour not specified");
+        status = BookingStatus.CANCELLED;
     }
 
     @Override

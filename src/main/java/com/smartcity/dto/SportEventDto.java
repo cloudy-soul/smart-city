@@ -10,7 +10,10 @@ public record SportEventDto(
         Long id,
         @NotBlank String title,
         @NotNull String description,
-        @NotNull LocalDateTime eventDate,
+        LocalDateTime eventDate,
         @NotNull Double ticketPrice,
-        @NotNull Long venueId) {
+        Long venueId,
+        Long slotId,
+        Integer ticketCapacity,
+        Integer availableTickets) {
 }

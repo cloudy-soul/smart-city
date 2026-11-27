@@ -3,6 +3,8 @@ package com.smartcity.controller;
 import com.smartcity.dto.BookingDto;
 import com.smartcity.service.BookingService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,6 +31,21 @@ public class BookingController {
     public List<BookingDto> list() {
         return service.findAll();
     }
+
+    public record Reservation(@NotNull Long eventId, @NotNull @Positive Integer quantity) {
+    }
+
+    @GetMapping("/mine")
+    public List<BookingDto> mine() { return service.mine(); }
+
+    @PostMapping("/reservations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public BookingDto reserve(@Valid @RequestBody Reservation request) {
+        return service.reserve(request.eventId(), request.quantity());
+    }
+
+    @PostMapping("/{id}/cancel")
+    public BookingDto cancel(@PathVariable Long id) { return service.cancel(id); }
 
     @GetMapping("/{id}")
     public BookingDto get(@PathVariable Long id) {

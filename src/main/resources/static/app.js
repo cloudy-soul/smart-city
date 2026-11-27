@@ -1,46 +1,83 @@
-import {adminColumns,adminGroups,adminRelations,dependentRecord,fillRelatedFields,linkLegacyRecords,refreshRelatedRecords,updateBookingStatus,validateAdminRecord} from "./admin-data.js";
-import {cookieLabel,rememberLanguage,updateCookieBanner} from "./cookie-banner.js";
+import {mountPagination} from "./pagination.js";
+import {analyticsMarkup,mountAnalytics,recordNavigation} from "./atlas-analytics.js";
+import {catalogPayload,catalogRecord,collections,request} from "./catalog-api.js";
+import {adminColumns,adminGroups} from "./admin-data.js";
+import {cookieLabel,rememberLanguage,rememberedChoice,rememberChoice,updateCookieBanner} from "./cookie-banner.js";
 import {liveCategories,loadCasablancaPlaces,loadViewportPlaces} from "./live-places.js";
 import {cities} from "./assets/cities.js";
 import {regions} from "./assets/borders.js";
 import {paint} from "./artwork.js";
-import {modules,schemas,adminSections,seed} from "./data.js";
+import {modules,schemas,adminSections} from "./data.js";
 import {$,normalize,lang,t,esc,field,input,press,link,searchMatch,values} from "./ui.js";
 
 const root=$("app");
 const dialog=$("dialog");
-const storageKey="atlas-frontend-preview-v1";
-const initialRecords=structuredClone(seed);
+const state={records:[],user:null,guest:false};
+try{sessionStorage.removeItem("atlas-frontend-preview-v1");}catch{}
+document.cookie="smartcity_demo_student=; Max-Age=0; Path=/; SameSite=Lax";
+const apiStatus={};
+const connected=section=>Object.hasOwn(collections,section);
+const keepLocal=record=>record.atlasCity;
 for(const city of cities){
-  if(initialRecords.some(row=>row.module==="cities"&&row.city===city.id))continue;
-  initialRecords.push({id:"city-"+city.id,module:"cities",city:city.id,name:city.name,country:"Morocco",
-    latitude:city.center[0],longitude:city.center[1]});
+  state.records.push({id:"atlas-"+city.id,module:"cities",city:city.id,name:city.name,country:"Morocco",
+    latitude:city.center[0],longitude:city.center[1],atlasCity:true});
 }
-linkLegacyRecords(initialRecords);
-const defaultState={catalogVersion:2,records:initialRecords,user:null,guest:false,profiles:{},cvs:[],favourites:[]};
-let state;
-try { state=JSON.parse(sessionStorage.getItem(storageKey)) || structuredClone(defaultState); }
-catch { state=structuredClone(defaultState); }
-if (!state.catalogVersion) {
-  const selaPark=seed.find(record=>record.id==="sela-park");
-  if (!state.records.some(record=>record.id===selaPark.id)) {
-    state.records.push(structuredClone(selaPark));
+
+let loadSequence=0;
+let personalCvs=[];
+let cvStatus="";
+let favouriteStatus="";
+let favourites=new Set();
+async function loadCatalog(){
+  const sequence=++loadSequence;
+  if(view.name==="admin"&&(!state.user?.admin||["analytics","activity"].includes(view.params.get("tab"))))return;
+  const admin=view.name==="admin";
+  const account=view.name==="account";
+  const tab=view.params.get("tab");
+  if(account&&(!canUse()||!["cv","favourites","bookings","applications"].includes(tab)))return;
+  if(account&&tab==="cv"&&view.params.get("edit")==="new")return;
+  const entries=Object.entries(collections).flatMap(([section,url])=>{
+    if(section==="activity")return [];
+    if(section==="bookings"||section==="applications"){
+      if(admin)return [[section,url]];
+      return account&&canUse()&&tab===section?[[section,url+"/mine"]]:[];
+    }
+    return [[section,section==="news"&&admin?url+"/admin":url]];
+  });
+  if(canUse()&&(Object.hasOwn(modules,view.name)||view.name==="search"||(account&&tab==="favourites"))){
+    entries.push(["favourites","favourites"]);
+    favouriteStatus="Loading favourites…";
   }
-  state.catalogVersion=1;
+  if(account&&tab==="cv"&&canUse()){
+    entries.push(["cv","cvs/mine"]);
+    cvStatus="Loading CVs…";
+  }
+  entries.forEach(([section])=>{apiStatus[section]="Loading records…";});
+  render();
+  const responses=await Promise.allSettled(entries.map(([,url])=>request(url)));
+  if(sequence!==loadSequence)return;
+  const records=[];
+  entries.forEach(([section],index)=>{
+    const result=responses[index];
+    const error=result.status==="rejected"?"Could not load records. "+result.reason.message:"";
+    apiStatus[section]=error;
+    if(section==="favourites"){
+      favouriteStatus=error;
+      favourites=new Set(error?[]:result.value.map(item=>item.module+"-"+item.recordId));
+    }else if(section==="cv"){
+      cvStatus=error;
+      personalCvs=error?[]:result.value;
+    }else if(!error){
+      for(const row of result.value){
+        if((section==="bookings"&&!row.eventId)||(section==="applications"&&!row.sampleSubmission))continue;
+        records.push(catalogRecord(section,row,records));
+      }
+    }
+  });
+  state.records=[...state.records.filter(keepLocal),...records];
+  render();
 }
-if(state.catalogVersion<2){
-  const existingCities=new Set();
-  for(const row of state.records.filter(item=>item.module==="cities")){
-    if(!row.city||existingCities.has(row.city))row.city="city-"+row.id;
-    existingCities.add(row.city);
-  }
-  for(const city of initialRecords.filter(row=>row.module==="cities")){
-    if(!state.records.some(row=>row.module==="cities"&&row.city===city.city))state.records.push(structuredClone(city));
-  }
-  linkLegacyRecords(state.records);
-  state.catalogVersion=2;
-  save();
-}
+
 let view;
 let map;
 let markers;
@@ -53,16 +90,14 @@ let travelTimer;
 let walkTimer;
 let preview;
 let notice="";
-const cvFiles=new Map();
 
-function save(){ sessionStorage.setItem(storageKey,JSON.stringify(state)); }
-const id=()=>crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint32Array(4)),part=>part.toString(16)).join("-");
-const today=()=>new Date().toISOString().slice(0,10);
+
+
 const label=key=>esc(t(key));
 const info=text=>'<p class="notice">'+label(text)+'</p>';
 const tags=(title,description="")=>'<header class="page-head"><div><h1>'+label(title)+'</h1>'+(description?'<p>'+label(description)+'</p>':'')+'</div></header>';
 const page=(body)=>'<div class="wrap">'+body+'</div>';
-const directoryCities=()=>state.records.filter(row=>row.module==="cities").map(row=>{
+const directoryCities=()=>[...new Map(state.records.filter(row=>row.module==="cities").map(row=>[row.city,row])).values()].map(row=>{
   const original=cities.find(city=>city.id===row.city);
   const center=Number.isFinite(row.latitude)&&Number.isFinite(row.longitude)
     ?[row.latitude,row.longitude]:original?.center;
@@ -70,10 +105,11 @@ const directoryCities=()=>state.records.filter(row=>row.module==="cities").map(r
 }).filter(city=>city.center);
 const cityById=key=>directoryCities().find(city=>city.id===key);
 const defaultCity=()=>cityById("casablanca")||directoryCities()[0];
-const owner=()=>state.user?.email || "";
+
 const inAdmin=()=>view.name==="admin";
 const canUse=()=>Boolean(state.user);
-const byId=key=>state.records.find(record=>record.id===key);
+const auditRows=new Map();
+const byId=key=>state.records.find(record=>record.id===key)||auditRows.get(key);
 const article=(title,body)=>'<section class="panel stack"><h2>'+label(title)+'</h2>'+body+'</section>';
 const statusLine=()=>notice?info(notice):"";
 
@@ -89,22 +125,20 @@ function readView(){
   const url=new URL(location.href);
   const filename=url.pathname.split("/").pop().replace(/\.html$/,"");
   const name=filename===""||filename==="index"?"home":filename;
-  return {name,params:url.searchParams,city:cityById(url.searchParams.get("city")) || defaultCity()};
+  return {name,params:url.searchParams,city:cityById(url.searchParams.get("city")) || cityById(rememberedChoice("city")) || defaultCity()};
 }
 function navigate(href,replace=false){
   const url=new URL(href,location.href);
   history[replace?"replaceState":"pushState"]({}, "",url.pathname+url.search+url.hash);
   dialog.close();
   render(true);
+  recordNavigation(view.name);
+  loadCatalog();
 }
 function notification(text){
   notice=text;
   render();
 }
-function log(name,description="",status="Preview",source=owner()||"Guest"){
-  state.records.unshift({id:id(),module:"activity",name,description,status,source,date:new Date().toISOString()});
-}
-function adminLog(name,description){log(name,description,"Local","Local administrator");}
 function change(language){
   rememberLanguage(language);
   document.documentElement.lang=language;
@@ -179,7 +213,7 @@ function confirmDialog(title,name,callback){
 function accessGate(returnTo,callback,allowGuest=false){
   pending={returnTo,callback};
   showDialog(allowGuest?"Explore the city":"Sign in",'<div class="stack">'+
-    info("Preview data stays in this browser tab.")+'<div class="actions">'+
+'<div class="actions">'+
     link("Sign in",path("account",{tab:"signin",returnTo}),"action primary")+
     link("Register",path("account",{tab:"register",returnTo}),"action")+
     (allowGuest?press("Continue as guest","guest"):"")+'</div></div>');
@@ -189,8 +223,17 @@ function requireUser(action){
   accessGate(location.pathname+location.search,action);
 }
 
+function citySearchForm(city,id){
+  const title=label("Search all city modules");
+  return '<form data-form="global-search" class="toolbar" action="'+esc(path("search"))+'" method="get">'+
+    '<input type="hidden" name="city" value="'+esc(city.id)+'">'+
+    '<label class="sr-only" for="'+esc(id)+'">'+title+'</label>'+
+    '<input id="'+esc(id)+'" name="q" type="search" placeholder="'+title+'">'+
+    '<button type="submit">'+label("Search")+'</button></form>';
+}
+
 function renderHome(){
-  preview=cityById(preview?.id)||defaultCity();
+  preview=cityById(preview?.id)||cityById(rememberedChoice("city"))||defaultCity();
   const regionPaths=regions.map(([fill,d])=>'<path class="region" fill="'+fill+'" d="'+d+'"/>').join("");
   const townPaths=regions.map(([, ,d])=>'<path class="municipal" d="'+d+'"/>').join("");
   const pins=directoryCities().map(city=>{
@@ -204,7 +247,7 @@ function renderHome(){
     '<label for="choose-city">'+label("Choose a city")+'</label><div class="toolbar"><select id="choose-city">'+
     directoryCities().sort((a,b)=>a.name.localeCompare(b.name)).map(city=>'<option value="'+city.id+'">'+esc(city.name)+'</option>').join("")+
     '</select>'+press("Enter city","enter","","primary")+'</div>'+
-    '<form data-form="global-search" class="toolbar"><label class="sr-only" for="atlas-search">'+label("Search")+'</label><input id="atlas-search" name="query" type="search" placeholder="'+label("Search")+'"><button>'+label("Search")+'</button></form>'+
+    citySearchForm(preview,"atlas-search")+
     '</div><div class="atlas-map">'+
     '<svg viewBox="0 0 600 500" role="img" aria-label="Morocco regional and municipal borders">'+regionPaths+townPaths+
     '<text class="sea-label" x="100" y="165" transform="rotate(-27 100 165)">Atlantic Ocean</text></svg>'+pins+
@@ -212,7 +255,7 @@ function renderHome(){
     '<a class="credit" href="https://github.com/zkousama/morocco-communes" target="_blank" rel="noopener noreferrer">Boundary data</a></div></section>'+
     '<section class="chapter"><h2>'+label("City modules")+'</h2><nav id="home-modules"></nav></section>');
   const picker=$("choose-city");
-  picker.onchange=()=>showPreview(cityById(picker.value));
+  picker.onchange=()=>{rememberChoice("city",picker.value);showPreview(cityById(picker.value));};
   root.querySelectorAll(".pin").forEach(pin=>{
     const display=()=>showPreview(cityById(pin.dataset.city));
     pin.addEventListener("pointerenter",display);
@@ -223,6 +266,7 @@ function renderHome(){
 function showPreview(city){
   preview=city;
   $("choose-city").value=city.id;
+  root.querySelector('[data-form="global-search"] [name="city"]').value=city.id;
   $("landmark-caption").textContent=city.landmark+" · "+city.name;
   paint($("landmark"),city);
   root.querySelectorAll(".pin").forEach(pin=>pin.classList.toggle("current",pin.dataset.city===city.id));
@@ -236,6 +280,7 @@ function showPreview(city){
 }
 function enterCity(city){
   if(travelTimer||!city) return;
+  rememberChoice("city",city.id);
   const href=path("city",{city:city.id});
   if(matchMedia("(prefers-reduced-motion: reduce)").matches){navigate(href);return;}
   $("arrival").textContent=city.name;
@@ -249,10 +294,6 @@ function enterCity(city){
 function recordsFor(key,city){
   const rows=state.records.filter(record=>record.city===city.id && record.published!==false &&
     (key==="search"?Object.hasOwn(modules,record.module)||record.module==="news":record.module===key || key==="business"&&record.module==="news"));
-  if(city.id!=="casablanca"&&(key==="tourism"||key==="search")){
-    rows.push({id:"landmark-"+city.id,module:"tourism",city:city.id,name:city.landmark,category:"Landmark",
-      description:"Destination in "+city.name+".",example:true});
-  }
   return rows;
 }
 function getRecord(key){
@@ -264,7 +305,7 @@ function recordUrl(record){
 function resultItems(records){
   if(!records.length) return '<p class="muted">'+label("Nothing to display.")+'</p>';
   return records.map(record=>'<article class="record"><div><small>'+label(record.category||modules[record.module]?.label||"")+
-    (record.example?" · "+label("Sample listing"):"")+'</small><h3>'+esc(record.name)+'</h3>'+
+'</small><h3>'+esc(record.name)+'</h3>'+
     '<p>'+esc(record.description||[record.venue,record.date,record.employer,record.status].filter(Boolean).join(" · "))+'</p></div>'+
     link("Details",recordUrl(record),"action")+'</article>').join("");
 }
@@ -274,12 +315,17 @@ function filterFields(records,kind){
     ...(key==="category"?liveCategories(kind==="search"?null:kind):[])
   ])];
   return '<div class="filters">'+field(input("query","Search","search"),view.params.get("q")||"")+
-    field(input("category","Category","select",options("category")),"All")+
+    field(input("category","Category","select",options("category")),
+      kind!=="search"&&options("category").includes(rememberedChoice("category"))?rememberedChoice("category"):"All")+
     field(input("area","Area","select",options("area")),"All")+
     (kind==="sports"?field(input("date","Event date","date")):"")+
     (kind==="jobs"?field(input("employment","Employment type","select",options("employment")),"All"):"")+
     (kind==="search"?field(input("module","City modules","select",[{value:"All",label:"All"},...Object.entries(modules).map(([value,meta])=>({value,label:meta.label}))]),"All"):"")+
     '<button type="submit" class="action">'+label("Search")+'</button></div>';
+}
+function catalogStatus(section){
+  const relevant=section==="search"?[...Object.keys(modules),"news"]:section==="business"?["business","news"]:[section];
+  return [...new Set(relevant.map(key=>apiStatus[key]).filter(Boolean))].join(" ");
 }
 function renderCatalog(){
   const key=view.name;
@@ -292,13 +338,14 @@ function renderCatalog(){
   }
   const records=recordsFor(key,view.city);
   root.innerHTML=page(link("City walk",cityPath("city"),"back")+tags(title,view.city.name)+
-    statusLine()+'<form id="filters">'+filterFields(records,key)+'</form>'+
+    statusLine()+(catalogStatus(key)?info(catalogStatus(key)):selected?info("Record unavailable."):"")+'<form id="filters">'+filterFields(records,key)+'</form>'+
     '<div class="tabs">'+press("List","show-list",'id="list-toggle" aria-pressed="true"')+
     press("Map","show-map",'id="map-toggle" aria-pressed="false"')+'</div>'+
     '<p id="result-count" class="results-count" role="status"></p><div id="catalog-list"></div>'+
     (view.city.id==="casablanca"&&key!=="jobs"?'<section id="citywide" hidden><h2>Across Casablanca</h2><p id="citywide-status" role="status"></p><div id="citywide-results"></div></section>':"")+
     '<div id="catalog-map" hidden><div class="layout"><div class="map-shell"><div id="leaf-map" class="leaf-map"></div></div>'+viewportPanel()+'</div></div>');
   const filters=$("filters");
+  const pager=mountPagination($("catalog-list"),{name:"Directory results",key:"directory-"+key,renderRows:resultItems});
   const filterRecord=(record,filters,matcher=searchMatch)=>{
     const {query,category,area,date,employment,module}=filters;
     return matcher(query,record)&&(category==="All"||record.category===category)&&(area==="All"||record.area===area)&&
@@ -313,7 +360,7 @@ function renderCatalog(){
   const liveMatches=record=>(key==="search"||record.module===key)&&filterRecord(record,currentFilters());
   const update=()=>{
     const results=resultsForFilters();
-    $("catalog-list").innerHTML=resultItems(results);
+    pager.set(results,JSON.stringify(currentFilters()));
     $("result-count").textContent=results.length+" "+t("Results").toLowerCase();
     if(!$("catalog-map").hidden) {
       mapRows(results);
@@ -329,7 +376,10 @@ function renderCatalog(){
     if(!$("catalog-map").hidden&&$("citywide")) $("list-toggle").click();
     else update();
   };
-  filters.oninput=update;
+  filters.oninput=event=>{
+    if(event.target.name==="category")rememberChoice("category",event.target.value==="All"?null:event.target.value);
+    update();
+  };
   $("map-toggle").onclick=()=>{
     $("catalog-map").hidden=false;
     $("catalog-list").hidden=true;
@@ -385,14 +435,14 @@ function setupCitywideSearch(key,form,currentFilters,filterRecord,getCurated){
   let timer;
   let failed=false;
   let progress="";
-  let limit=60;
-  let previousQuery="";
+  let pager;
   const visible=()=>!section.hidden;
 
   function display(){
     if(!visible())return;
-    results.replaceChildren();
+
     if(!tileResults){
+      results.replaceChildren();
       status.textContent=failed?"Live citywide search is unavailable. The Atlas listings above are still available.":
         progress||"Looking for places across Casablanca…";
       if(failed){
@@ -416,29 +466,9 @@ function setupCitywideSearch(key,form,currentFilters,filterRecord,getCurated){
     );
     status.textContent=matches.length+" matching OpenStreetMap places."+
       (tileResults.failed?" Some parts of the city could not be loaded.":"");
-    for(const record of matches.slice(0,limit)){
-      const row=document.createElement("article");
-      row.className="record";
-      const copy=document.createElement("div");
-      const category=document.createElement("small");
-      category.textContent=t(record.category)+" · OpenStreetMap";
-      const title=document.createElement("h3");
-      title.textContent=record.name;
-      copy.append(category,title);
-      const detail=document.createElement("button");
-      detail.type="button";
-      detail.textContent=t("Details");
-      detail.onclick=()=>liveDetails(record);
-      row.append(copy,detail);
-      results.append(row);
-    }
-    if(matches.length>limit){
-      const more=document.createElement("button");
-      more.type="button";
-      more.textContent="Show more places";
-      more.onclick=()=>{limit+=60;display();};
-      results.append(more);
-    }
+    pager??=mountPagination(results,{name:"OpenStreetMap search results",key:"citywide",
+      renderRows:rows=>placeRows(rows.map(record=>({record,live:true})))});
+    pager.set(matches,JSON.stringify(current));
   }
 
   async function load(){
@@ -467,9 +497,7 @@ function setupCitywideSearch(key,form,currentFilters,filterRecord,getCurated){
   return ()=>{
     const filters=currentFilters();
     const query=normalize(filters.query);
-    const signature=JSON.stringify(filters);
     section.hidden=!$("catalog-map").hidden||(query.length<2&&filters.category==="All");
-    if(signature!==previousQuery){limit=60;previousQuery=signature;}
     clearTimeout(timer);
     if(!visible())return;
     display();
@@ -483,6 +511,7 @@ const hasLocation=record=>Number.isFinite(record.latitude)&&Number.isFinite(reco
 function renderCity(){
   const items=recordsFor("search",view.city);
   root.innerHTML=page(link("Back to Morocco",path("home"),"back")+tags(view.city.name,"City walk")+
+    citySearchForm(view.city,"city-walk-search")+
     '<div class="tabs">'+Object.entries(modules).map(([key,meta])=>link(meta.label,cityPath(key),"action")).join("")+'</div>'+
     '<div class="layout"><section><div class="map-shell"><div id="leaf-map" class="leaf-map" aria-label="'+label("Street map")+'"></div>'+
     '<div class="avatar" id="avatar" role="img" aria-label="Your character"><i></i><b></b><span></span></div></div>'+
@@ -521,6 +550,38 @@ function viewportPanel(){
   return article("Places in view",'<p id="viewport-status" role="status">Loading the map…</p><div id="viewport-results" class="viewport-results"></div>');
 }
 
+function placeRows(rows){
+  const result=document.createDocumentFragment();
+  if(!rows.length){
+    const empty=document.createElement("p");
+    empty.textContent=t("Nothing to display.");
+    result.append(empty);
+  }
+  for(const {record,live} of rows){
+    if(!live){
+      const wrapper=document.createElement("div");
+      wrapper.innerHTML=resultItems([record]);
+      result.append(...wrapper.children);
+      continue;
+    }
+    const row=document.createElement("article");
+    row.className="record";
+    const copy=document.createElement("div");
+    const category=document.createElement("small");
+    category.textContent=t(record.category)+" · OpenStreetMap";
+    const title=document.createElement("h3");
+    title.textContent=record.name;
+    copy.append(category,title);
+    const detail=document.createElement("button");
+    detail.type="button";
+    detail.textContent=t("Details");
+    detail.onclick=()=>liveDetails(record);
+    row.append(copy,detail);
+    result.append(row);
+  }
+  return result;
+}
+
 function attachViewport(getCurated,allowLive){
   if(disposeViewport)return;
   if(!map){
@@ -530,6 +591,7 @@ function attachViewport(getCurated,allowLive){
   const currentMap=map;
   const liveMarkers=L.layerGroup().addTo(currentMap);
   const results=$("viewport-results");
+  const pager=mountPagination(results,{name:"Map places",key:"viewport",renderRows:placeRows});
   const status=$("viewport-status");
   let places=[];
   let controller;
@@ -541,24 +603,11 @@ function attachViewport(getCurated,allowLive){
     const curated=getCurated().filter(record=>hasLocation(record)&&bounds.contains([record.latitude,record.longitude]));
     const names=new Set(curated.map(record=>normalize(record.name)));
     const visible=places.filter(record=>allowLive(record)&&!names.has(normalize(record.name)));
-    results.innerHTML=curated.length?resultItems(curated):"";
+    pager.set([...curated.map(record=>({record,live:false})),...visible.map(record=>({record,live:true}))],
+      bounds.toBBoxString());
     liveMarkers.clearLayers();
     for(const record of visible){
-      const row=document.createElement("article");
-      row.className="record";
-      const copy=document.createElement("div");
-      const category=document.createElement("small");
-      category.textContent=t(record.category)+" · OpenStreetMap";
-      const title=document.createElement("h3");
-      title.textContent=record.name;
-      copy.append(category,title);
-      const detail=document.createElement("button");
-      detail.type="button";
-      detail.textContent=t("Details");
       const show=()=>liveDetails(record);
-      detail.onclick=show;
-      row.append(copy,detail);
-      results.append(row);
       L.circleMarker([record.latitude,record.longitude],{
         radius:5,weight:1,color:"#fffefa",fillColor:"#236044",fillOpacity:1
       }).addTo(liveMarkers).on("click",show);
@@ -633,95 +682,142 @@ function details(record,schema=schemas[record.module]||[]){
     }).join("")+'</dl>';
 }
 function renderRecord(record,title){
-  const saved=state.favourites.some(item=>item.owner===owner()&&item.id===record.id);
+  const saved=favourites.has(record.id);
   const actionAttribute='data-id="'+esc(record.id)+'"';
   root.innerHTML=page(link(title,cityPath(view.name),"back")+tags(record.name,record.category)+statusLine()+
-    '<section class="panel detail">'+(record.example?'<p class="muted">'+label("Sample listing")+'</p>':"")+details(record)+
-    '<div class="actions">'+press(saved?"Remove favourite":"Save favourite","favourite",actionAttribute)+
-    (record.module==="sports"?press("Reserve tickets","reserve",actionAttribute,"primary"):"")+
+    '<section class="panel detail">'+details(record)+
+    (record.module==="business"?'<h2>News and announcements</h2><div id="business-news-list"></div>':"")+
+    '<div class="actions">' +press(saved?"Remove favourite":"Save favourite","favourite",actionAttribute+(favouriteStatus==="Loading favourites…"?" disabled":""))+
+    (record.module==="sports"&&record.slotId&&record.availability>0?press("Reserve tickets","reserve",actionAttribute,"primary"):"")+
+    (record.module==="sports"&&!record.slotId?'<span>Reservations open after a venue slot is assigned.</span>':"")+
+    (record.module==="sports"&&record.slotId&&!record.capacity?'<span>Reservations open after capacity is confirmed.</span>':"")+
     (record.module==="jobs"?press("Apply","apply",actionAttribute,"primary"):"")+
-    (record.module==="business"?press("Send enquiry","enquiry",actionAttribute,"primary"):"")+
     (hasLocation(record)?link("View on map",cityPath(view.name,{mode:"map",focus:record.id}),"action"):"")+'</div></section>');
+  if(record.module==="business"){
+    mountPagination($("business-news-list"),{name:"Business news",key:"business-news",renderRows:resultItems})
+      .set(state.records.filter(item=>item.module==="news"&&item.businessRef===record.id&&item.published));
+  }
 }
 
 function chooseAction(action,record){
   if(!record)return;
   if(action==="favourite"){
-    requireUser(()=>{
-      const index=state.favourites.findIndex(item=>item.owner===owner()&&item.id===record.id);
-      if(index<0) state.favourites.push({owner:owner(),id:record.id,city:record.city});
-      else state.favourites.splice(index,1);
-      save();
-      notification(index<0?"Favourite saved.":"Favourite removed.");
-    });
+    requireUser(()=>updateFavourite(record));
     return;
   }
   if(action==="reserve") requireUser(()=>reservation(record));
   if(action==="apply") requireUser(()=>application(record));
-  if(action==="enquiry") enquiry(record);
+}
+async function updateFavourite(record){
+  if(!record.apiId)return;
+  const saved=favourites.has(record.id);
+  try{
+    await request("favourites/"+record.module+"/"+record.apiId,saved?"DELETE":"PUT");
+    if(saved)favourites.delete(record.id);
+    else favourites.add(record.id);
+    notification(saved?"Favourite removed.":"Favourite saved.");
+  }catch(error){notification(error.message);}
+}
+
+async function submitWorkflow(form,operation){
+  const button=form.querySelector("button");
+  if(button.disabled)return;
+  button.disabled=true;
+  try{await operation();}
+  catch(error){formStatus(form,error.message);}
+  finally{button.disabled=false;}
 }
 function reservation(record){
   const schema=[input("quantity","Tickets","number")];
-  showDialog("Reserve tickets",'<p>'+esc(record.name)+'</p><p>'+esc(
-    [record.venue,record.date,record.time,record.price==null?null:record.price+" MAD per ticket"].filter(Boolean).join(" · ")
-  )+'</p>'+simpleForm(schema,{quantity:1},"Review reservation",["quantity"]),form=>{
-    const quantity=values(form,schema).quantity;
-    if(!Number.isInteger(quantity)||quantity<1){
-      formStatus(form,"Enter a positive whole number of tickets.");return;
+  showDialog("Reserve tickets",'<p>'+esc(record.name+" · "+record.availability+" available · "+record.price+" MAD each")+'</p>'+
+
+    simpleForm(schema,{quantity:1},"Reserve",["quantity"]),form=>submitWorkflow(form,async ()=>{
+      const quantity=values(form,schema).quantity;
+      if(!Number.isInteger(quantity)||quantity<1)throw new Error("Enter a positive whole number of tickets.");
+      await request("bookings/reservations","POST",{eventId:record.apiId,quantity});
+      notice="Reservation confirmed.";
+      navigate(cityPath("account",{tab:"bookings"}));
+    }));
+}
+async function application(record){
+  showDialog("Apply",info("Loading CVs…"));
+  const loading=$("dialog-body").firstChild;
+  try{
+    const available=await request("cvs/mine");
+    if(!dialog.open||$("dialog-body").firstChild!==loading)return;
+    if(!available.length){
+      showDialog("Apply",'<p>Upload a PDF before applying.</p>'+
+        link("Upload CV",cityPath("account",{tab:"cv",edit:"new",job:record.id}),"action primary"));
+      return;
     }
-    const total=quantity*(record.price||0);
-    showDialog("Review reservation",'<dl><dt>'+label("Tickets")+'</dt><dd>'+quantity+'</dd><dt>Total</dt><dd>'+
-      total.toFixed(2)+' MAD</dd></dl>'+info("Preview data stays in this browser tab.")+
-      '<form data-form="dialog"><div class="actions"><button class="primary">'+label("Save preview reservation")+'</button></div></form>',()=>{
-        state.records.push({id:id(),module:"bookings",city:record.city,name:record.name,owner:owner(),eventId:record.id,
-          venue:record.venue,date:record.date,quantity,total,status:"Pending"});
-        log("Booking created",record.name);
-        save();
-        notice="Preview reservation saved.";
-        navigate(cityPath("account",{tab:"bookings"}));
-      });
-  });
-}
-function application(record){
-  const available=state.cvs.filter(cv=>cv.owner===owner());
-  if(!available.length){
-    showDialog("Apply",'<p>Add a CV to your account before trying the application form.</p>'+
-      link("New CV",cityPath("account",{tab:"cv",edit:"new",job:record.id}),"action primary"));
-    return;
+    const schema=[input("cvId","CV","select",available.map(cv=>({value:cv.id,label:cv.title}))),input("note","Cover note","textarea")];
+    showDialog("Apply",'<p>'+esc(record.name)+'</p>'+
+      simpleForm(schema,{},"Submit application",["cvId"]),form=>submitWorkflow(form,async ()=>{
+        const {cvId,note}=values(form,schema);
+        await request("job_applications/submissions","POST",{jobId:record.apiId,cvId:Number(cvId),coverNote:note});
+        notice="Application submitted.";
+        navigate(cityPath("account",{tab:"applications"}));
+      }));
+  }catch(error){
+    if(dialog.open&&$("dialog-body").firstChild===loading)showDialog("Apply",info(error.message));
   }
-  const schema=[
-    input("cvId","CV","select",available.map(cv=>({value:cv.id,label:cv.name}))),
-    input("note","Cover note","textarea")
-  ];
-  showDialog("Apply",'<p>'+esc(record.name)+'</p>'+simpleForm(schema,{},"Save preview application",["cvId"]),form=>{
-    const {cvId,note}=values(form,schema);
-    const cv=available.find(item=>item.id===cvId);
-    if(!cv){formStatus(form,"Choose one of your CVs.");return;}
-    state.records.push({id:id(),module:"applications",city:record.city,name:record.name,owner:owner(),jobId:record.id,cvId,
-      cv:cv.name,date:today(),note,status:"Received"});
-    log("Application submitted",record.name);
-    save();
-    notice="Preview application saved.";
-    navigate(cityPath("account",{tab:"applications"}));
-  });
 }
-function enquiry(record){
-  const schema=[input("name","Full name"),input("email","Email","email"),input("subject","Subject"),input("message","Message","textarea")];
-  showDialog("Send enquiry",'<p>'+esc(record.name)+'</p>'+simpleForm(schema,
-    {email:owner()},"Preview enquiry",["name","email","subject","message"]),form=>{
-    form.reset();
-    formStatus(form,"Enquiry preview completed. No message was sent.");
+const cvUploadFields=[input("title","CV title"),input("file","PDF","file")];
+const cvDownload=(id,review=false)=>'<a class="action" href="/api/cvs/'+esc(id)+(review?'/review':'/file')+'" download>Download CV</a>';
+function renderPersonalAccount(tab){
+  const nav='<nav class="tabs">'+Object.entries({...(state.user?.student?{cv:"My CVs"}:{}),favourites:"Favourites",bookings:"My bookings",applications:"My applications"})
+    .map(([key,title])=>link(title,cityPath("account",{tab:key}),"action")).join("")+
+    link("Account",cityPath("account"),"action")+'</nav>';
+  let content;
+  let rows;
+  let renderRows;
+  const list='<div id="account-list"></div>';
+  const error=tab==="cv"?cvStatus:tab==="favourites"?favouriteStatus:apiStatus[tab];
+  if(tab==="cv"&&view.params.get("edit")==="new"){
+    content=accountForm("Upload CV",pageForm(cvUploadFields,{},"Upload",["title","file"],"personal-cv"));
+  }else if(tab==="cv"){
+    rows=personalCvs;
+    renderRows=items=>items.length?items.map(cv=>'<article class="record"><div><h3>'+
+      esc(cv.title)+'</h3><p>'+esc(cv.filename)+'</p></div><div class="actions">'+cvDownload(cv.id)+
+      press("Edit CV","edit-personal-cv",'data-id="'+cv.id+'"')+press("Delete CV","delete-personal-cv",'data-id="'+cv.id+'"',"danger")+
+      '</div></article>').join(""):info("No CVs uploaded.");
+    content=article("My CVs",link("Upload CV",cityPath("account",{tab:"cv",edit:"new"}),"action primary")+
+      (error?info(error):list));
+  }else if(tab==="favourites"){
+    rows=state.records.filter(row=>favourites.has(row.id)&&row.published!==false);
+    renderRows=resultItems;
+    content=article("Favourites",error?info(error):list);
+  }else{
+    rows=state.records.filter(row=>row.module===tab);
+    renderRows=items=>table(items,tab==="bookings"?["name","date","status","quantity","total"]:["name","date","status","note"],record=>{
+      const attr='data-id="'+esc(record.id)+'"';
+      return tab==="applications"?cvDownload(record.cvId):
+        record.status==="Confirmed"?press("Cancel","cancel-booking",attr):"";
+    });
+    content=article(tab==="bookings"?"My bookings":"My applications",error?info(error):list);
+  }
+  root.innerHTML=page(tags("Account")+nav+statusLine()+content);
+  if($("account-list"))mountPagination($("account-list"),{name:"Account records",key:"account-"+tab,renderRows}).set(rows);
+  const file=root.querySelector('[name="file"]');
+  if(file)file.accept=".pdf,application/pdf";
+}
+async function uploadCV(form){
+  await submitWorkflow(form,async ()=>{
+    await request("cvs/upload","POST",new FormData(form));
+    const job=view.params.get("job");
+    notice="CV uploaded.";
+    navigate(job?cityPath("jobs",{record:job}):cityPath("account",{tab:"cv"}));
   });
 }
 function personalNav(tab){
-  return '<nav class="tabs">'+Object.entries({profile:"Profile",cv:"My CVs",favourites:"Favourites",
+  return '<nav class="tabs">'+Object.entries({profile:"Profile",...(state.user?.student?{cv:"My CVs"}:{}),favourites:"Favourites",
     bookings:"My bookings",applications:"My applications"}).map(([key,title])=>
     '<a class="action" href="'+esc(cityPath("account",{tab:key}))+'"'+(tab===key?' aria-current="page"':'')+
     '>'+label(title)+'</a>'
   ).join("")+press("Sign out","sign-out")+'</nav>';
 }
 function accountNav(){
-  return '<nav class="tabs">'+Object.entries({signin:"Sign in",register:"Register",reset:"Reset password"}).map(([key,title])=>
+  return '<nav class="tabs">'+Object.entries({signin:"Sign in",register:"Register"}).map(([key,title])=>
     link(title,cityPath("account",{tab:key,returnTo:view.params.get("returnTo")}),"action")
   ).join("")+'</nav>';
 }
@@ -738,138 +834,69 @@ function accountForm(title,body){
 function pageForm(schema,record={},submit="Save",required=[],type="account"){
   return simpleForm(schema,record,submit,required).replace('data-form="dialog"','data-form="'+type+'"');
 }
+const profileFields=[
+  input("name","Full name"),input("email","Email","email"),input("student","Student account","checkbox"),
+  input("phone","Phone","tel"),input("birthday","Date of birth","date"),input("nationality","Nationality"),
+  input("country","Country"),input("region","Region"),input("city","City"),input("address","Street address"),
+  input("zipcode","Postal code"),input("currentPassword","Current password (required to change email)","password")
+];
+const passwordFields=[input("currentPassword","Current password","password"),
+  input("newPassword","New password","password"),input("confirm","Confirm new password","password")];
+
 function renderAccount(){
   const tab=view.params.get("tab")||(canUse()?"profile":"signin");
-  const resetFields=[input("email","Email","email")];
+  if(canUse()&&["cv","bookings","applications","favourites"].includes(tab)){renderPersonalAccount(tab);return;}
   const credentials=[input("email","Email","email"),input("password","Password","password")];
   const registration=[input("name","Full name"),...credentials,input("confirm","Confirm password","password"),
-    input("role","Role","select",["Registered user","Student","Tourist"])];
+    input("student","Student account","checkbox")];
   let content;
-  if(tab==="reset"||tab==="reset-preview"){
-    const schema=tab==="reset"?resetFields:[input("password","Password","password"),input("confirm","Confirm password","password")];
-    content=accountNav()+accountForm("Reset password",
-      info("Preview data stays in this browser tab.")+(tab==="reset-preview"?'<p>Sample reset step. No reset token is validated.</p>':"")+
-      pageForm(schema,{},"Reset password",schema.map(field=>field.key),tab));
-  } else if(!canUse()||tab==="signin"||tab==="register"){
-    const form=tab==="register"?registration:credentials;
-    content=accountNav()+accountForm(tab==="register"?"Register":"Sign in",
-      info("Use sample details. This preview does not authenticate accounts or save passwords.")+
-      pageForm(form,{},tab==="register"?"Register":"Sign in",form.map(field=>field.key),tab==="register"?"register":"signin")+
-      '<div class="actions">'+press("Start sample user session","sample-user")+'</div>');
-  } else if(tab==="cv"){
-    const edit=view.params.get("edit");
-    const cvs=state.cvs.filter(item=>item.owner===owner());
-    const record=cvs.find(item=>item.id===edit);
-    content=personalNav(tab)+(edit && (record || edit==="new")
-      ?accountForm(edit==="new"?"New CV":"Edit",info("The selected file stays in memory while this page is open.")+
-        pageForm(schemas.cv,record,"Save",record?["name"]:["name","file"],"cv"))
-      :'<section class="panel stack"><div class="actions">'+link("New CV",cityPath("account",{tab:"cv",edit:"new"}),"action primary")+'</div>'+
-        (cvs.length?cvs.map(cv=>'<article class="record"><div><h3>'+esc(cv.name)+'</h3><p>'+
-        esc([cv.filename,cv.skills,cv.updated].filter(Boolean).join(" · "))+'</p></div><div class="actions">'+
-        link("Edit",cityPath("account",{tab:"cv",edit:cv.id}),"action")+
-        press("Open file","open-cv",'data-id="'+esc(cv.id)+'"')+
-        press("Delete","delete-cv",'data-id="'+esc(cv.id)+'"',"danger")+'</div></article>').join(""):
-        '<p>'+label("Nothing to display.")+'</p>')+'</section>');
-  } else if(tab==="favourites"){
-    const saved=state.favourites.filter(item=>item.owner===owner()).map(item=>
-      byId(item.id) || (cityById(item.city)?recordsFor("tourism",cityById(item.city)).find(record=>record.id===item.id):null)
-    ).filter(record=>record&&record.published!==false);
-    content=personalNav(tab)+article("Favourites",resultItems(saved));
-  } else if(tab==="bookings"||tab==="applications"){
-    const records=state.records.filter(record=>record.module===tab&&record.owner===owner());
-    content=personalNav(tab)+article(tab==="bookings"?"My bookings":"My applications",
-      table(records,["name","date","status",tab==="bookings"?"quantity":"cv"],record=>{
-        const attr='data-id="'+esc(record.id)+'"';
-        return press("Details","personal-record",attr)+
-          (tab==="bookings"&&record.status!=="Cancelled"?press("Cancel","cancel-booking",attr):"");
-      }));
-  } else {
-    const profile=state.profiles[owner()] || {name:state.user.name,email:owner()};
-    const fields=schemas.profile.filter(field=>
-      (!["studentNumber","institution"].includes(field.key)||state.user.role==="Student")&&
-      (field.key!=="travelPurpose"||state.user.role==="Tourist"));
-    content=personalNav("profile")+accountForm("Profile",
-      '<p>'+label(state.user.role)+'</p>'+pageForm(fields,profile,"Save",["name","email"],"profile"));
-    queueMicrotask(()=>{
-      const email=root.querySelector('input[name="email"]');
-      if(email) email.readOnly=true;
-    });
+  if(!canUse()||tab==="signin"||tab==="register"){
+    const registering=tab==="register";
+    const form=registering?registration:credentials;
+    content=accountNav()+accountForm(registering?"Register":"Sign in",
+      pageForm(form,{},registering?"Register":"Sign in",form.filter(item=>item.key!=="student").map(item=>item.key),
+        registering?"register":"signin"));
+  }else{
+    content=personalNav("profile")+
+      accountForm("Edit profile",info("Turning off student status pauses CV access and new job applications. Your existing records are kept.")+
+        pageForm(profileFields,state.user,"Save profile",["name","email"],"profile"))+
+      accountForm("Change password",info("Use at least 12 characters. Other sessions will be signed out.")+
+        pageForm(passwordFields,{},"Change password",passwordFields.map(field=>field.key),"password"));
   }
   root.innerHTML=page(tags("Account")+statusLine()+content);
 }
-function rememberUser(email,name,role){
-  state.user={email:normalize(email),name,role};
-  if(!state.records.some(row=>row.module==="users"&&row.email===state.user.email)){
-    state.records.push({id:id(),module:"users",name,email:state.user.email,role,enabled:true});
-  }
-  state.guest=false;
-  log("Login","Preview session");
-  save();
-  const target=accountReturn();
-  const continuation=pending?.callback;
-  pending=undefined;
-  notice="Preview session started.";
-  navigate(role==="Administrator"?cityPath("admin"):target);
-  if(continuation&&role!=="Administrator") continuation();
-}
+
 function accountSubmit(form,type){
-  const data=Object.fromEntries(new FormData(form));
-  if(type==="signin"){
-    rememberUser(data.email,data.email.split("@")[0],"Registered user");return;
-  }
-  if(type==="register"||type==="reset-preview"){
-    if(data.password!==data.confirm){formStatus(form,"Passwords must match.");return;}
-    if(type==="register"){rememberUser(data.email,data.name,data.role);return;}
-    navigate(cityPath("account",{tab:"signin"}));
-    notification("Password reset preview completed.");
+  if(type==="profile"||type==="password"){
+    submitWorkflow(form,async ()=>{
+      const data=values(form,type==="profile"?profileFields:passwordFields);
+      for(const key of ["currentPassword","newPassword","confirm"]){
+        if(form.elements[key])data[key]=form.elements[key].value;
+      }
+      if(type==="password"&&data.newPassword!==data.confirm)throw new Error("Passwords must match.");
+      delete data.confirm;
+      if(type==="profile"&&!data.birthday)data.birthday=null;
+      state.user=await request(type==="profile"?"account":"account/password","PUT",data);
+      personalCvs=[];
+      notification(type==="profile"?"Profile saved.":"Password changed.");
+    });
     return;
   }
-  if(type==="reset"){
-    form.reset();
-    formStatus(form,"Reset request preview completed. No email was sent.");
-    if(!form.querySelector("[data-reset-next]")){
-      const next=document.createElement("a");
-      next.className="action";
-      next.dataset.resetNext="";
-      next.href=cityPath("account",{tab:"reset-preview",returnTo:view.params.get("returnTo")});
-      next.textContent="Open sample reset screen";
-      form.append(next);
-    }
-    return;
-  }
-  if(!canUse()) return;
-  if(type==="profile"){
-    state.profiles[owner()]={...data,email:owner()};
-    state.user.name=data.name;
-    save();notification("Profile preview saved.");return;
-  }
-  if(type==="cv"){
-    const edit=view.params.get("edit");
-    const previous=state.cvs.find(cv=>cv.id===edit&&cv.owner===owner());
-    const entry=values(form,schemas.cv);
-    if(entry.file && !/\.(pdf|doc|docx|odt)$/i.test(entry.file.name)){
-      formStatus(form,"Choose a PDF, DOC, DOCX or ODT file.");return;
-    }
-    if(entry.file?.size>10*1024*1024){
-      formStatus(form,"Select a file smaller than 10 MB.");return;
-    }
-    const key=previous?.id || id();
-    if(entry.file) cvFiles.set(key,entry.file);
-    const newRecord={id:key,owner:owner(),name:entry.name,description:entry.description,skills:entry.skills,
-      keywords:entry.keywords,filename:entry.file?.name||previous?.filename,updated:today()};
-    if(previous) Object.assign(previous,newRecord);else state.cvs.push(newRecord);
-    save();
-    notice="CV preview saved.";
-    const job=view.params.get("job");
-    const vacancy=job&&byId(job);
-    if(vacancy){
-      navigate(recordUrl(vacancy));
-      application(vacancy);
-    } else navigate(cityPath("account",{tab:"cv"}));
-  }
+  if(!["register","signin"].includes(type))return;
+  submitWorkflow(form,async ()=>{
+    const data=Object.fromEntries(new FormData(form));
+    if(type==="register"&&data.password!==data.confirm)throw new Error("Passwords must match.");
+    const {name,email,password}=data;
+    state.user=await request("account/"+type,"POST",{name,email,password,student:form.elements.student?.checked===true});
+    const target=accountReturn();
+    const continuation=pending?.callback;
+    pending=undefined;
+    navigate(target);
+    if(continuation)continuation();
+  });
 }
 
-const tableLabels={name:"Name",email:"Email",role:"Role",enabled:"Enabled",status:"Status",date:"Date",source:"Source",category:"Category",quantity:"Tickets",cv:"CV",owner:"Account",city:"City",venue:"Venue"};
+const tableLabels={note:"Cover note",total:"Total (MAD)",name:"Name",email:"Email",role:"Role",enabled:"Enabled",status:"Status",date:"Date",source:"Source",category:"Category",quantity:"Tickets",cv:"CV",owner:"Account",city:"City",venue:"Venue"};
 function table(rows,columns,actions){
   if(!rows.length) return '<p>'+label("Nothing to display.")+'</p>';
   return '<div class="table-scroll"><table><thead><tr>'+columns.map(key=>'<th scope="col">'+label(tableLabels[key]||key)+'</th>').join("")+
@@ -880,19 +907,24 @@ function table(rows,columns,actions){
     }).join("")+(actions?'<td><div class="actions">'+actions(row)+'</div></td>':"")+'</tr>').join("")+'</tbody></table></div>';
 }
 function renderAdmin(){
+  if(!state.user?.admin){
+    root.innerHTML=page(tags("Administration")+info("Administrator sign-in is required.")+
+      link("Sign in",cityPath("account",{tab:"signin",returnTo:location.pathname+location.search}),"action"));
+    return;
+  }
   const tab=Object.hasOwn(adminSections,view.params.get("tab"))?view.params.get("tab"):"overview";
   const menu='<nav class="admin-nav" aria-label="Administration">'+adminGroups.map(([heading,sections])=>
     '<section><h2>'+label(heading)+'</h2>'+sections.map(id=>
       '<a href="'+esc(cityPath("admin",{tab:id}))+'"'+(id===tab?' aria-current="page"':'')+'>'+label(adminSections[id])+'</a>'
     ).join("")+'</section>'
   ).join("")+'</nav>';
-  const all=section=>state.records.filter(record=>record.module===section);
+  const all=section=>state.records.filter(record=>record.module===section&&!record.atlasCity);
   let body;
-  if(tab==="overview"){
+  if(tab==="analytics")body=analyticsMarkup;
+  else if(tab==="overview"){
     const metrics=[
-      ["Users","users",all("users").length],
       ["Pending bookings","bookings",all("bookings").filter(row=>row.status==="Pending").length],
-      ["Applications to review","applications",all("applications").filter(row=>row.status==="Received").length],
+      ["Applications to review","applications",all("applications").filter(row=>row.status==="Pending").length],
       ["Sport events","sports",all("sports").length]
     ];
     const overview='<div class="stats">'+metrics.map(([name,section,count])=>
@@ -900,123 +932,157 @@ function renderAdmin(){
     ).join("")+'</div><h3>Directory by module</h3><div class="actions">'+Object.entries(modules).map(([section,meta])=>
       link(meta.label+" ("+all(section).length+")",cityPath("admin",{tab:section}),"action")
     ).join("")+'</div>';
-    body=article("Dashboard",overview)+article("Recent activity",table(all("activity").slice(0,8),adminColumns.activity)+
+    body=article("Dashboard",overview)+article("Recent activity",'<div id="recent-activity"></div>'+
       link("Activity log",cityPath("admin",{tab:"activity"}),"action"));
   }else{
     const locked=["bookings","applications","activity"].includes(tab);
     const records=all(tab);
-    const states=[...new Set(records.map(row=>row.status).filter(Boolean))];
+    const states=tab==="activity"?["INSERT","UPDATE","DELETE"]:[...new Set(records.map(row=>row.status).filter(Boolean))];
     const filter=states.length?field(input("admin-status","Status","select",["All",...states]),"All"):"";
     body=article(adminSections[tab],'<div class="filters">'+field(input("admin-query","Search","search"))+filter+
-      (locked?"":press("Add","admin-add",'data-section="'+tab+'"',"primary"))+'</div><p id="admin-count" class="results-count" role="status"></p><div id="admin-table"></div>');
+      (locked?"":press("Add","admin-add",'data-section="'+tab+'"',"primary"))+'</div>'+(tab==="activity"?"":'<p id="admin-count" class="results-count" role="status"></p>')+
+      '<div id="admin-table"></div>');
   }
-  root.innerHTML=page(tags("Administration","Local preview")+
-    info("Changes are saved in this browser tab. Use sample data.")+statusLine()+
+  root.innerHTML=page(tags("Administration",connected(tab)?"PostgreSQL directory":"Directory")+
+    (!connected(tab)&&!["overview","analytics"].includes(tab)?info("This section is unavailable."):"")+
+    (apiStatus[tab]?info(apiStatus[tab]):"")+statusLine()+
     '<div class="admin-layout">'+menu+'<div class="admin-content stack">'+body+'</div></div>');
-  if(tab==="overview")return;
+  if(tab==="analytics"){mountAnalytics($("atlas-analytics"));return;}
+  if(tab==="overview"){mountAudit($("recent-activity"),"recent-activity",false).set([]);return;}
   const search=root.querySelector('[name="admin-query"]');
   const status=root.querySelector('[name="admin-status"]');
+  if(tab==="activity"){
+    const pager=mountAudit($("admin-table"),"activity-log",true);
+    const update=()=>pager.set([],JSON.stringify({query:search.value.trim(),operation:status.value==="All"?"":status.value}));
+    search.oninput=update;
+    status.onchange=update;
+    update();
+    return;
+  }
+  const pager=mountPagination($("admin-table"),{name:"Admin records",key:"admin-"+tab,
+    renderRows:records=>table(records,adminColumns[tab],record=>{
+      const attr='data-id="'+esc(record.id)+'" data-section="'+tab+'"';
+      return press("Details","admin-details",attr)+
+        (tab==="bookings"?"":press(tab==="applications"?"Update status":"Edit","admin-edit",attr))+
+        (!["bookings","applications"].includes(tab)?press("Delete","admin-delete",attr,"danger"):"");
+    })});
   const update=()=>{
     const records=all(tab).filter(record=>searchMatch(search.value,record)&&
       (!status||status.value==="All"||record.status===status.value));
     $("admin-count").textContent=records.length+" "+t("Results").toLowerCase();
-    $("admin-table").innerHTML=table(records,adminColumns[tab],record=>{
-      const attr='data-id="'+esc(record.id)+'" data-section="'+tab+'"';
-      return press("Details","admin-details",attr)+
-        (tab==="activity"?"":press(["bookings","applications"].includes(tab)?"Update status":"Edit","admin-edit",attr))+
-        (tab==="users"?press(record.enabled?"Disable":"Enable","admin-toggle",attr):"")+
-        (!["activity","bookings","applications"].includes(tab)?press("Delete","admin-delete",attr,"danger"):"");
-    });
+    pager.set(records,JSON.stringify([search.value,status?.value]));
   };
   search.oninput=update;
   if(status)status.onchange=update;
   update();
 }
 
-function adminEdit(section,record){
-  if(!inAdmin()||!Object.hasOwn(adminColumns,section)||section==="activity"||(record&&record.module!==section))return;
-  const isStatus=["bookings","applications"].includes(section);
-  if(isStatus&&!record)return;
-  const relation=adminRelations[section]?.[0];
-  const deriveFromParent=relation&&section!=="jobs"&&(!record||record[relation.key]);
-  const derivedKeys=section==="sports"?["venue","slot","date","time"]:section==="slots"?["venue"]:["business"];
-  const schema=schemas[section].filter(field=>isStatus?field.key==="status":
-    !deriveFromParent||!derivedKeys.includes(field.key));
-  if(relation){
-    const choices=state.records.filter(row=>row.module===relation.module);
-    schema.unshift(input(relation.key,relation.label,"select",[
-      {value:"",label:"Choose a record"},...choices.map(row=>({
-        value:row.id,label:row.name+" / "+(cityById(row.city)?.name||row.city||"")
-      }))
-    ]));
-  }
-  if(!["users","cities"].includes(section)&&!isStatus&&!deriveFromParent){
-    schema.unshift(input("city","City","select",directoryCities().map(city=>({value:city.id,label:city.name}))));
-  }
-  if(section==="users")schema.push(input("authorizationLevel","Administrator authorization level","number"));
-  const initial={city:view.city.id,published:true,enabled:true,authorizationLevel:1,...record};
-  const required=isStatus?["status"]:section==="users"?["name","email"]:["name"];
-  if(section==="cities")required.push("country","latitude","longitude");
-  if(section==="sports"&&!record)required.push("capacity","availability","price");
-  if(deriveFromParent)required.push(relation.key);
-  showDialog(isStatus?"Update status":record?"Edit":"Add",simpleForm(schema,initial,"Save",required),form=>{
-    const updates=fillRelatedFields(state.records,section,values(form,schema));
-    const error=validateAdminRecord(state.records,section,record,updates);
-    if(error){formStatus(form,error);return;}
-    if(section==="bookings"){
-      const statusError=updateBookingStatus(state.records,record,updates.status);
-      if(statusError){formStatus(form,statusError);return;}
-    }else if(record){
-      const oldEmail=record.email;
-      if(section==="users")updates.email=normalize(updates.email);
-      Object.assign(record,updates);
-      if(section==="users"&&oldEmail&&oldEmail!==record.email){
-        for(const row of [...state.records,...state.cvs,...state.favourites]){
-          if(row.owner===oldEmail)row.owner=record.email;
-        }
-        if(state.profiles[oldEmail]){
-          state.profiles[record.email]={...state.profiles[oldEmail],email:record.email};
-          delete state.profiles[oldEmail];
-        }
-        if(owner()===oldEmail)state.user.email=record.email;
-      }
-    }else{
-      const recordId=id();
-      if(section==="users")updates.email=normalize(updates.email);
-      state.records.push({id:recordId,module:section,city:section==="cities"?recordId:view.city.id,...updates});
+function mountAudit(container,key,showDetails){
+  auditRows.clear();
+  return mountPagination(container,{
+    name:showDetails?"Activity log pages":"Recent activity pages",key,
+    load:async (offset,limit,filter)=>{
+      const params=new URLSearchParams({offset,limit,...(filter?JSON.parse(filter):{})});
+      const rows=await request(collections.activity+"?"+params);
+      return rows.map(row=>catalogRecord("activity",row,[]));
+    },
+    renderRows:rows=>{
+      auditRows.clear();
+      for(const row of rows)auditRows.set(row.id,row);
+      return table(rows,adminColumns.activity,showDetails?record=>press("Details","admin-details",
+        'data-id="'+esc(record.id)+'" data-section="activity"'):undefined);
     }
-    refreshRelatedRecords(state.records);
-    adminLog(isStatus?"Status updated":record?"Record updated":"Record created",
-      (updates.name||record.name)+(isStatus?" · "+updates.status:""));
-    save();
-    dialog.close();
-    notification("Local change saved.");
   });
+}
+
+const locationFields=[input("address","Address"),input("latitude","Latitude","number"),input("longitude","Longitude","number")];
+const description=input("description","Description","textarea");
+const nameField=input("name","Name");
+const catalogFields={
+  cities:[nameField,input("country","Country"),description,...locationFields.slice(1)],
+  tourism:[nameField,description,input("category","Category"),...locationFields,input("hours","Opening hours"),input("rating","Rating","number")],
+  education:[nameField,description,input("category","Institution type"),...locationFields,input("email","Contact email","email"),input("website","Website","url")],
+  venues:[nameField,description,input("category","Venue type"),...locationFields,input("capacity","Capacity","number")],
+  business:[nameField,description,input("category","Business type"),input("country","Country"),input("cityName","City"),
+    input("region","Region"),...locationFields,input("email","Email","email"),input("phone","Phone"),input("tax","Tax reference"),
+    input("domainName","Domain name")],
+  slots:[input("start","Start time","datetime-local"),input("end","End time","datetime-local")],
+  sports:[nameField,description,input("capacity","Total tickets","number"),input("price","Ticket price (MAD)","number")],
+  jobs:[nameField,description,input("category","Industry"),input("employment","Employment type"),input("salary","Salary (MAD)","number"),
+    input("deadline","Application deadline","date"),input("requirements","Requirements","textarea")],
+  news:[nameField,input("description","Body","textarea"),input("category","Type","select",["News","Announcement"]),input("published","Published","checkbox")],
+  applications:[input("status","Status","select",["Pending","Accepted","Rejected"])]
+};
+const choicesFor=(section)=>state.records.filter(row=>row.module===section&&row.apiId)
+  .map(row=>({value:row.id,label:section==="slots"?row.venue+" · "+row.name:row.name}));
+const refField=(key,label,section)=>input(key,label,"select",[{value:"",label:"Choose a record"},...choicesFor(section)]);
+function editCatalog(section,record){
+  const schema=[...catalogFields[section]];
+  const place=["tourism","education","venues"].includes(section);
+  if(place)schema.push(refField("cityRef","City","cities"));
+  if(section==="slots")schema.push(refField("venueRef","Venue","venues"));
+  if(section==="sports"){
+    const usedSlots=new Set(state.records.filter(row=>row.module==="sports"&&row.id!==record?.id).map(row=>row.slotRef));
+    schema.push(input("slotRef","Venue time slot","select",[{value:"",label:"Choose a slot"},
+      ...choicesFor("slots").filter(choice=>!usedSlots.has(choice.value))]));
+  }
+  if(section==="news")schema.push(refField("businessRef","Business","business"));
+  if(section==="jobs")schema.push(refField("businessRef","Business (optional)","business"));
+  const initial={cityName:view.city.name,country:"Morocco",cityRef:state.records.find(row=>row.module==="cities"&&row.apiId&&row.city===view.city.id)?.id,...record};
+  const required=["name","category","country","cityRef","price","employment","salary","capacity","email","phone","cityName","start","end","status"];
+  if(section==="slots")required.push("venueRef");
+  if(section==="news")required.push("businessRef","description");
+  if(section==="sports")required.push("slotRef");
+  if(place||section==="cities")required.push("latitude","longitude");
+  showDialog(section==="applications"?"Update status":record?"Edit":"Add",(section==="sports"?'<p>Choose a venue slot and set ticket capacity. '+link("Manage venue slots",cityPath("admin",{tab:"slots"}),"action")+'</p>':"")+
+    simpleForm(schema,initial,"Save",required),
+    async form=>{
+      const submit=form.querySelector('button');
+      if(submit.disabled)return;
+      submit.disabled=true;
+      try{
+        const payload=catalogPayload(section,values(form,schema));
+        if(section==="applications"){
+          await request("job_applications/"+record.apiId+"/status","PATCH",{status:form.elements.status.value.toUpperCase()});
+        }else{
+          await request(collections[section]+(record?"/"+record.apiId:""),record?"PUT":"POST",payload);
+        }
+        dialog.close();
+        notice="Record saved.";
+        await loadCatalog();
+      }catch(error){formStatus(form,error.message);}
+      finally{submit.disabled=false;}
+    });
+}
+
+function adminEdit(section,record){
+  if(!inAdmin()||!state.user?.admin||!Object.hasOwn(catalogFields,section))return;
+  if(record&&record.module!==section)return;
+  if(section!=="applications"||record)editCatalog(section,record);
 }
 function renderLegal(kind){
   const privacy=kind==="privacy";
   root.innerHTML=page(tags(privacy?"Privacy Policy":"Terms of Service")+article(privacy?"Privacy Policy":"Terms of Service",privacy?
-    '<p>This frontend preview stores sample profiles and activity in the current browser tab. Your cookie preference is saved in this browser. Language stays in the current session unless you choose to remember it for future visits.</p>'+
-    '<p>CV file contents are kept in memory while this page is open. Password fields are used for form demonstration. Street tiles are provided by OpenStreetMap.</p>'+
-    '<div class="actions">'+press("Clear preview data","clear-preview","","danger")+'</div>':
-    '<p>Use sample information when exploring the atlas. Listings and reservation or application screens demonstrate the guide’s interface.</p>'+
+    '<dl><dt>Essential</dt><dd>Remembers your choices for six months.</dd>'+
+    '<dt>Language</dt><dd>Remembers your selected language for future visits. You can always change language for the current tab.</dd>'+
+    '<dt>Analytics</dt><dd>Off by default. When site analytics is enabled, your opt-in allows Atlas to count page views using a page identifier and timestamp.</dd>'+
+    '<dt>Personalization</dt><dd>Off by default. Saves your last selected city and preferred category in this browser for future visits. These preferences are stored separately from analytics.</dd></dl>'+
+    '<p>Change your choices through Cookie preferences in the footer. Turning off language or personalization clears its cookies. Atlas sends no visitor details to a location provider and stores no IP addresses, ISP data, precise locations, or individual browsing history for analytics.</p>'+
+    '<p>Sign-in uses a session cookie. Account records, uploads and applications are stored on the Atlas server. Street tiles are provided by OpenStreetMap.</p>':
     '<p>Confirm opening hours, service availability and event information with the relevant provider before making plans.</p>'));
 }
 
-function downloadCv(cv){
-  const file=cvFiles.get(cv.id);
-  if(!file)return;
-  const url=URL.createObjectURL(file);
-  const download=document.createElement("a");
-  download.href=url;download.download=file.name;download.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1500);
+function auditValues(heading,raw){
+  const values=Object.entries(JSON.parse(raw||"{}"));
+  return values.length?'<h3>'+heading+'</h3><dl>'+
+    values.map(([field,value])=>'<dt>'+esc(field)+'</dt><dd>'+esc(value??"—")+'</dd>').join("")+'</dl>':"";
 }
 
 const actionHandlers={
   enter:button=>enterCity(cityById(button.dataset.city)||preview),
   "show-list":()=>{}, "show-map":()=>{},
   guest:()=>{
-    state.guest=true;save();
+    state.guest=true;
     const target=pending?.returnTo || cityPath("city");
     pending=undefined;navigate(target);
   },
@@ -1024,85 +1090,78 @@ const actionHandlers={
   favourite:button=>chooseAction("favourite",getRecord(button.dataset.id)),
   reserve:button=>chooseAction("reserve",getRecord(button.dataset.id)),
   apply:button=>chooseAction("apply",getRecord(button.dataset.id)),
-  enquiry:button=>chooseAction("enquiry",getRecord(button.dataset.id)),
-  "sample-user":()=>rememberUser("traveller@example.test","Sample registered user","Registered user"),
-  "sign-out":()=>{
-    log("Logout");state.user=null;state.guest=false;pending=undefined;save();navigate(path("home"));
+  "sign-out":async ()=>{
+    try{
+      await request("account/signout","POST");
+      state.user=null;state.guest=false;pending=undefined;
+      favourites.clear();
+      auditRows.clear();
+      personalCvs=[];
+      state.records=state.records.filter(keepLocal);
+      navigate(path("home"));
+    }catch(error){notification(error.message);}
   },
-  "open-cv":button=>{
-    const cv=state.cvs.find(item=>item.id===button.dataset.id&&item.owner===owner());
-    if(!cv) return;
-    const file=cvFiles.get(cv.id);
-    if(!file){
-      showDialog("Open file",'<p>The file is no longer in memory. Open Edit to choose it again.</p>');
-      return;
-    }
-    downloadCv(cv);
-  },
-  "delete-cv":button=>{
-    const cv=state.cvs.find(item=>item.id===button.dataset.id&&item.owner===owner());
+  "edit-personal-cv":button=>{
+    const cv=personalCvs.find(item=>String(item.id)===button.dataset.id);
     if(!cv)return;
-    confirmDialog("Delete CV?",cv.name,()=>{
-      state.cvs=state.cvs.filter(item=>item.id!==cv.id);cvFiles.delete(cv.id);save();notification("CV removed.");
-    });
+    showDialog("Edit CV",simpleForm(cvUploadFields,cv,"Save",["title"]),
+      form=>submitWorkflow(form,async ()=>{
+        await request("cvs/mine/"+cv.id,"PUT",new FormData(form));
+        dialog.close();
+        notice="CV updated.";
+        await loadCatalog();
+      }));
+    dialog.querySelector('[name="file"]').accept=".pdf,application/pdf";
   },
-  "personal-record":button=>{
-    const record=byId(button.dataset.id);
-    if(record?.owner===owner())showDialog(record.name,details(record));
+  "delete-personal-cv":button=>{
+    const cv=personalCvs.find(item=>String(item.id)===button.dataset.id);
+    if(!cv)return;
+    confirmDialog("Delete CV?",cv.title,async ()=>{
+      try{
+        await request("cvs/mine/"+cv.id,"DELETE");
+        notice="CV deleted.";
+        await loadCatalog();
+      }catch(error){notification(error.message);}
+    });
   },
   "cancel-booking":button=>{
     const record=byId(button.dataset.id);
-    if(record?.owner!==owner()||record.module!=="bookings")return;
-    showDialog("Cancel reservation?",'<p>'+esc(record.name)+'</p><form data-form="dialog"><button class="danger">Cancel reservation</button></form>',()=>{
-      updateBookingStatus(state.records,record,"Cancelled");log("Booking cancelled",record.name);save();dialog.close();notification("Preview reservation cancelled.");
-    });
+    if(record?.module!=="bookings")return;
+    showDialog("Cancel reservation?",'<p>'+esc(record.name)+'</p>'+
+      '<form data-form="dialog"><button class="danger">Cancel reservation</button><p class="form-status" role="status"></p></form>',
+      form=>submitWorkflow(form,async ()=>{
+        await request("bookings/"+record.apiId+"/cancel","POST");
+        dialog.close();
+        notice="Reservation cancelled.";
+        await loadCatalog();
+      }));
   },
   "admin-add":button=>adminEdit(button.dataset.section),
   "admin-edit":button=>adminEdit(button.dataset.section,byId(button.dataset.id)),
   "admin-details":button=>{
     if(!inAdmin())return;
     const record=byId(button.dataset.id);
-    if(record){
-      const cv=record.module==="applications"&&state.cvs.find(item=>
-        item.owner===record.owner&&(record.cvId?item.id===record.cvId:item.name===record.cv)
-      );
-      const file=cv&&cvFiles.get(cv.id);
-      showDialog(record.name,details(record)+(cv?'<h3>Attached CV</h3>'+details(cv,schemas.cv)+
-        (file?press("Open file","open-admin-cv",'data-id="'+esc(record.id)+'"'):'<p>CV file is unavailable in this tab.</p>'):""));
+    if(record?.module==="activity"){
+      showDialog(record.name,'<p>'+esc(record.operation+" · "+record.date+" · "+record.source)+'</p><p>Changed fields: '+
+        esc(record.description)+'</p>'+auditValues("Before",record.beforeValues)+auditValues("After",record.afterValues)+
+        ((record.previousStatus||record.currentStatus)?
+          '<p>'+esc([record.previousStatus,record.currentStatus].filter(Boolean).join(" → "))+'</p>':""));
+      return;
     }
-  },
-  "open-admin-cv":button=>{
-    if(!inAdmin())return;
-    const record=byId(button.dataset.id);
-    if(record?.module!=="applications")return;
-    const cv=state.cvs.find(item=>item.owner===record.owner&&item.id===record.cvId);
-    if(cv)downloadCv(cv);
-  },
-  "admin-toggle":button=>{
-    const record=byId(button.dataset.id);
-    if(!inAdmin()||record?.module!=="users")return;
-    record.enabled=!record.enabled;adminLog(record.enabled?"User enabled":"User disabled",record.name);save();notification("Local change saved.");
+    if(record)showDialog(record.name,details(record)+
+      (record.module==="applications"?cvDownload(record.cvId,true):""));
   },
   "admin-delete":button=>{
     const record=byId(button.dataset.id);
-    if(!inAdmin()||!record)return;
-    const dependency=dependentRecord(state.records,record);
-    if(dependency){
-      showDialog("Record is in use",'<p>'+esc(dependency.name)+' still links to this record.</p>');
-      return;
-    }
-    if(record.module==="cities"&&directoryCities().length<2){
-      showDialog("Keep one city",'<p>The atlas needs a city to open.</p>');
-      return;
-    }
-    confirmDialog("Delete record?",record.name,()=>{
-      state.records=state.records.filter(item=>item.id!==record.id);
-      adminLog("Record deleted",record.name);save();notification("Local record removed.");
+    if(!inAdmin()||!state.user?.admin||!record||!connected(record.module))return;
+    confirmDialog("Delete record?",record.name,async ()=>{
+      try{
+        await request(collections[record.module]+"/"+record.apiId,"DELETE");
+        notice="Record deleted.";
+        await loadCatalog();
+      }catch(error){notification(error.message);}
     });
-  },
-  "clear-preview":()=>confirmDialog("Clear local preview data?","Account previews, CV metadata and sample changes will be cleared.",()=>{
-    state=structuredClone(defaultState);cvFiles.clear();pending=undefined;sessionStorage.removeItem(storageKey);notification("Preview data cleared.");
-  })
+  }
 };
 
 document.addEventListener("click",event=>{
@@ -1114,11 +1173,6 @@ document.addEventListener("click",event=>{
   if(url.origin!==location.origin||!url.pathname.endsWith(".html"))return;
   event.preventDefault();
   notice="";
-  const name=url.pathname.split("/").at(-1).replace(/\.html$/,"");
-  if(Object.hasOwn(modules,name)&&!canUse()&&!state.guest){
-    accessGate(url.pathname+url.search,undefined,true);
-    return;
-  }
   navigate(url.href);
 });
 document.addEventListener("submit",event=>{
@@ -1126,8 +1180,10 @@ document.addEventListener("submit",event=>{
   if(!type)return;
   event.preventDefault();
   if(type==="dialog"){formHandler?.(event.target);return;}
+  if(type==="personal-cv"){uploadCV(event.target);return;}
   if(type==="global-search"){
-    navigate(path("search",{city:preview.id,q:new FormData(event.target).get("query")}));
+    const {city,q}=Object.fromEntries(new FormData(event.target));
+    navigate(path("search",{city,q:q.trim()}));
     return;
   }
   accountSubmit(event.target,type);
@@ -1137,5 +1193,7 @@ document.addEventListener("keydown",event=>{
   if(!key||view.name!=="city"||dialog.open||event.target.closest?.("input,select,textarea,button,[contenteditable]"))return;
   event.preventDefault();walk(key);
 });
-window.addEventListener("popstate",()=>{dialog.close();notice="";render(true);});
+window.addEventListener("popstate",()=>{dialog.close();notice="";render(true);recordNavigation(view.name);loadCatalog();});
 change(lang());
+recordNavigation(view.name);
+request("account").then(user=>{state.user=user;render();}).catch(()=>{}).finally(()=>loadCatalog());
